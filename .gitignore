@@ -1,0 +1,4 @@
+worklog
+worklog.db
+*.md
+!README.md
