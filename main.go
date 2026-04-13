@@ -34,6 +34,7 @@ func main() {
 
 	s := &Server{db: db, logDir: *logDir}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /schema", s.Schema)
 	mux.HandleFunc("GET /health", s.Health)
 	mux.HandleFunc("GET /entries", s.ListEntries)
 	mux.HandleFunc("POST /entries", s.CreateEntry)

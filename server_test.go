@@ -148,6 +148,24 @@ func TestSyncWritesFile(t *testing.T) {
 	}
 }
 
+func TestSchema(t *testing.T) {
+	s := testServer(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /schema", s.Schema)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/schema", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("got %d", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{"category", "title", "bullets", "hours_est", "required", "description"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("schema missing %q", want)
+		}
+	}
+}
+
 func TestEmptyList(t *testing.T) {
 	s := testServer(t)
 	mux := testMux(s)

@@ -14,6 +14,22 @@ type Server struct {
 	logDir string
 }
 
+var schema = map[string]any{
+	"endpoint": "POST /entries",
+	"fields": []map[string]any{
+		{"name": "category", "type": "string", "required": true, "description": "Work category, e.g. dev, security, admin, docs, infra"},
+		{"name": "title", "type": "string", "required": true, "description": "Concise label for the work performed"},
+		{"name": "bullets", "type": "[]string", "required": true, "description": "Terse, outcome-focused bullet points"},
+		{"name": "hours_est", "type": "number", "required": false, "description": "Estimated person-hours this would take without AI assistance", "default": 0},
+		{"name": "date", "type": "string", "required": false, "description": "YYYY-MM-DD, defaults to today"},
+		{"name": "time", "type": "string", "required": false, "description": "HH:MM, defaults to now"},
+	},
+}
+
+func (s *Server) Schema(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, schema)
+}
+
 func (s *Server) Health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

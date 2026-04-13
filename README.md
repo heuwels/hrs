@@ -9,7 +9,9 @@ GET  /entries → read back
 
 ## Why
 
-AI coding agents (Claude Code, Cursor, etc.) often can't write files outside their working directory. This gives them a local API to push structured work logs to, which get rendered as markdown for humans to read.
+I was tired of getting to the end of each day after context-switching between a dozen priorities and feeling like every day was an armed robbery where my time was the prize. I needed a way to recall what I actually worked on.
+
+AI coding agents (Claude Code, Cursor, etc.) can't write files outside their working directory. This gives them a local API to push structured work logs to from wherever they're running, rendered as markdown for humans to read.
 
 ## Install
 
@@ -63,6 +65,24 @@ Returns JSON array of entries. Defaults to today.
 ### `DELETE /entries/{id}`
 
 Remove an entry by ID.
+
+### `GET /schema`
+
+Returns field names, types, and descriptions so agents can self-discover the API without hardcoded instructions:
+
+```json
+{
+  "endpoint": "POST /entries",
+  "fields": [
+    {"name": "category", "type": "string", "required": true, "description": "Work category, e.g. dev, security, admin, docs, infra"},
+    {"name": "title", "type": "string", "required": true, "description": "Concise label for the work performed"},
+    {"name": "bullets", "type": "[]string", "required": true, "description": "Terse, outcome-focused bullet points"},
+    {"name": "hours_est", "type": "number", "required": false, "description": "Estimated person-hours this would take without AI assistance"},
+    {"name": "date", "type": "string", "required": false, "description": "YYYY-MM-DD, defaults to today"},
+    {"name": "time", "type": "string", "required": false, "description": "HH:MM, defaults to now"}
+  ]
+}
+```
 
 ### `GET /health`
 
@@ -125,17 +145,18 @@ curl -s -X POST http://localhost:9746/entries -d '{
 ```
 
 ### Fields:
-- `category` — e.g. `dev`, `security`, `admin`, `docs`, `infra`
-- `title` — concise label for the work
-- `bullets` — terse, outcome-focused bullet points
-- `hours_est` — your estimate of how long this would take a developer **without AI assistance**
-- `date` / `time` — optional, defaults to now
+
+Discover fields dynamically: `curl -s http://localhost:9746/schema`
 
 ### Important:
 - **Log proactively** — don't wait to be asked
 - **Log during work** — not just at the end of the session
 - **Be generous** — when in doubt, log it
 ````
+
+## A note on hours estimates
+
+The `hours_est` field asks the AI to estimate how long the work would take a competent developer without AI assistance. This is useful for understanding throughput, but take it with a grain of salt — AI agents tend to overstate the complexity of tasks they've completed. A "~4h" estimate for something that took 3 minutes of wall clock time is flattering but not always realistic. The daily summaries roll these up into "person-days saved" which makes for a nice story, just don't use it to plan your next sprint.
 
 ## Design
 
