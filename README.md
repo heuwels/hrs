@@ -97,17 +97,45 @@ worklog --migrate --db ~/worklog.db --dir ~/worklogs/
 
 ## Agent integration
 
-Add to your agent's instructions:
+Add something like this to your `CLAUDE.md` (or equivalent agent instructions). Here's an abridged version of how we use it at KO:
 
-```
-After completing work, log it:
-curl -X POST http://localhost:9746/entries -d '{
+````markdown
+## Work Logging
+
+All agent sessions MUST log significant work to the shared worklog.
+
+### When to log:
+- Any task that took more than 2-3 minutes
+- Writing, modifying, or reviewing code
+- Creating, updating, or reviewing PRs
+- Bug fixes, security work, documentation
+- Research that produced findings
+
+**Rule of thumb:** Can you write 2+ bullet points? Then log it.
+
+### How to log:
+
+```bash
+curl -s -X POST http://localhost:9746/entries -d '{
   "category": "dev",
-  "title": "Short description",
-  "bullets": ["What you did", "Key outcomes"],
+  "title": "Short description of work",
+  "bullets": ["What was accomplished", "Key outcomes or artifacts", "Files/systems touched"],
   "hours_est": 2
 }'
 ```
+
+### Fields:
+- `category` — e.g. `dev`, `security`, `admin`, `docs`, `infra`
+- `title` — concise label for the work
+- `bullets` — terse, outcome-focused bullet points
+- `hours_est` — your estimate of how long this would take a developer **without AI assistance**
+- `date` / `time` — optional, defaults to now
+
+### Important:
+- **Log proactively** — don't wait to be asked
+- **Log during work** — not just at the end of the session
+- **Be generous** — when in doubt, log it
+````
 
 ## Design
 
