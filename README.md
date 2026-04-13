@@ -30,11 +30,13 @@ go build -o worklog .
 ## Usage
 
 ```bash
-# Start the server (default: localhost:9746)
-worklog --db ~/worklog.db --dir ~/worklogs/
-
-# Custom port
-worklog --port 8080 --db ~/worklog.db --dir ~/worklogs/
+worklog serve   --db ~/worklog.db --dir ~/worklogs/   # start the API server
+worklog log     -db ~/worklog.db -c dev -t "title" -b "bullet one,bullet two" -e 2
+worklog ls      -db ~/worklog.db                       # print today's entries
+worklog ls      -db ~/worklog.db 2026-04-07            # print a specific date
+worklog tui     -db ~/worklog.db                       # interactive explorer (vim keys)
+worklog migrate --db ~/worklog.db --dir ~/worklogs/    # import existing markdown
+worklog docs                                           # serve the documentation site
 ```
 
 The `--dir` flag controls where markdown files are rendered. Point it at a directory your TUI or editor watches.
@@ -107,14 +109,6 @@ Each POST syncs a `YYYY-MM-DD.md` file in `--dir`:
 - Est. person-days: 0.4d (assuming 8h/day)
 ```
 
-## Migrate existing markdown
-
-If you have existing `YYYY-MM-DD.md` worklog files, import them:
-
-```bash
-worklog --migrate --db ~/worklog.db --dir ~/worklogs/
-```
-
 ## Agent integration
 
 Add something like this to your `CLAUDE.md` (or equivalent agent instructions). Here's an abridged version of how we use it at KO:
@@ -160,11 +154,13 @@ The `hours_est` field asks the AI to estimate how long the work would take a com
 
 ## Design
 
-- Single static binary, zero runtime dependencies
+- Single static binary — server, CLI, TUI, and docs site all in one
 - SQLite with WAL mode — handles concurrent agent writes
 - `net/http` stdlib server — one goroutine per request
+- BubbleTea TUI with vim keybindings
+- Embedded documentation site (`worklog docs` or `/docs/` on the server)
 - Markdown files are a rendered view, SQLite is the source of truth
-- ~200 lines of Go
+- ~1000 lines of Go (including ~180 lines of tests)
 
 ## License
 

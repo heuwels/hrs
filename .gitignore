@@ -1,4 +1,4 @@
 worklog
 worklog.db
-*.md
+/*.md
 !README.md
