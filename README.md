@@ -1,4 +1,4 @@
-# worklog
+# hrs
 
 Timesheets for your agent. A tiny HTTP server backed by SQLite that AI agents can POST work entries to from any directory.
 
@@ -16,27 +16,27 @@ AI coding agents (Claude Code, Cursor, etc.) can't write files outside their wor
 ## Install
 
 ```bash
-go install github.com/kollwitz-owen/worklog@latest
+go install github.com/kollwitz-owen/hrs@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/kollwitz-owen/worklog
-cd worklog
-go build -o worklog .
+git clone https://github.com/kollwitz-owen/hrs
+cd hrs
+go build -o hrs .
 ```
 
 ## Usage
 
 ```bash
-worklog serve   --db ~/worklog.db --dir ~/worklogs/   # start the API server
-worklog log     -db ~/worklog.db -c dev -t "title" -b "bullet one,bullet two" -e 2
-worklog ls      -db ~/worklog.db                       # print today's entries
-worklog ls      -db ~/worklog.db 2026-04-07            # print a specific date
-worklog tui     -db ~/worklog.db                       # interactive explorer (vim keys)
-worklog migrate --db ~/worklog.db --dir ~/worklogs/    # import existing markdown
-worklog docs                                           # serve the documentation site
+hrs serve   --db ~/hrs.db --dir ~/worklogs/   # start the API server
+hrs log     -db ~/hrs.db -c dev -t "title" -b "bullet one,bullet two" -e 2
+hrs ls      -db ~/hrs.db                       # print today's entries
+hrs ls      -db ~/hrs.db 2026-04-07            # print a specific date
+hrs tui     -db ~/hrs.db                       # interactive explorer (vim keys)
+hrs migrate --db ~/hrs.db --dir ~/worklogs/    # import existing markdown
+hrs docs                                       # serve the documentation site
 ```
 
 The `--dir` flag controls where markdown files are rendered. Point it at a directory your TUI or editor watches.
@@ -158,7 +158,7 @@ The `hours_est` field asks the AI to estimate how long the work would take a com
 - SQLite with WAL mode — handles concurrent agent writes
 - `net/http` stdlib server — one goroutine per request
 - BubbleTea TUI with vim keybindings
-- Embedded documentation site (`worklog docs` or `/docs/` on the server)
+- Embedded documentation site (`hrs docs` or `/docs/` on the server)
 - Markdown files are a rendered view, SQLite is the source of truth
 - ~1000 lines of Go (including ~180 lines of tests)
 

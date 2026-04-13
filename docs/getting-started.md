@@ -7,21 +7,21 @@
 ## install
 
 ```bash
-go install github.com/kollwitz-owen/worklog@latest
+go install github.com/kollwitz-owen/hrs@latest
 ```
 
 or build from source:
 
 ```bash
-git clone https://github.com/kollwitz-owen/worklog
-cd worklog
-go build -o worklog .
+git clone https://github.com/kollwitz-owen/hrs
+cd hrs
+go build -o hrs .
 ```
 
 ## start the server
 
 ```bash
-worklog serve --db ~/worklog.db --dir ~/worklogs/
+hrs serve --db ~/hrs.db --dir ~/worklogs/
 ```
 
 `--dir` is where markdown files get rendered. point it at a directory
@@ -39,17 +39,17 @@ curl -X POST http://localhost:9746/entries -d '{
 }'
 
 # via cli
-worklog log -db ~/worklog.db -c dev -t "first entry" -b "hello world" -e 0.1
+hrs log -db ~/hrs.db -c dev -t "first entry" -b "hello world" -e 0.1
 ```
 
 ## view your logs
 
 ```bash
 # print today's log
-worklog ls -db ~/worklog.db
+hrs ls -db ~/hrs.db
 
 # launch the tui
-worklog tui -db ~/worklog.db
+hrs tui -db ~/hrs.db
 ```
 
 ## migrate existing markdown
@@ -57,7 +57,7 @@ worklog tui -db ~/worklog.db
 if you have existing `YYYY-MM-DD.md` worklog files:
 
 ```bash
-worklog migrate --db ~/worklog.db --dir ~/worklogs/
+hrs migrate --db ~/hrs.db --dir ~/worklogs/
 ```
 
 ---

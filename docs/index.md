@@ -1,14 +1,14 @@
 
 ```
-            ┌──────────┐
-            │ worklog  │
-            │ ▓▓▓░░░░  │
-            │ ▓▓▓▓░░░  │
-            │ ▓▓▓▓▓▓░  │
-            └──────────┘
+            ┌─────────┐
+            │   hrs   │
+            │ ▓▓▓░░░  │
+            │ ▓▓▓▓░░  │
+            │ ▓▓▓▓▓░  │
+            └─────────┘
 ```
 
-# worklog
+# hrs
 
 timesheets for your agent.
 
@@ -21,14 +21,14 @@ to from any directory. renders markdown for humans.
 - [api reference](/api)
 - [agent integration](/agent-integration)
 - [tui explorer](/tui)
-- [github](https://github.com/kollwitz-owen/worklog)
+- [github](https://github.com/kollwitz-owen/hrs)
 
 ---
 
 ## the pitch
 
 you run a dozen ai agents across different repos. at 5pm you have no
-idea what happened today. worklog gives every agent a single endpoint
+idea what happened today. hrs gives every agent a single endpoint
 to push structured work entries to. you get markdown files and a tui
 to see what got done.
 

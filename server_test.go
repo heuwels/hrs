@@ -31,7 +31,7 @@ func TestCreateAndList(t *testing.T) {
 	s := testServer(t)
 	mux := testMux(s)
 
-	body := `{"date":"2026-04-13","time":"10:00","category":"dev","title":"Built worklogd","bullets":["wrote server","added tests"],"hours_est":2}`
+	body := `{"date":"2026-04-13","time":"10:00","category":"dev","title":"Built hrs server","bullets":["wrote server","added tests"],"hours_est":2}`
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, httptest.NewRequest("POST", "/entries", strings.NewReader(body)))
 	if w.Code != http.StatusCreated {
@@ -43,7 +43,7 @@ func TestCreateAndList(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("list: %d", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "Built worklogd") {
+	if !strings.Contains(w.Body.String(), "Built hrs server") {
 		t.Fatalf("missing entry: %s", w.Body.String())
 	}
 }

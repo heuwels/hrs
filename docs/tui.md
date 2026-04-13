@@ -5,7 +5,7 @@
 ---
 
 ```bash
-worklog tui -db ~/worklog.db
+hrs tui -db ~/hrs.db
 ```
 
 vim-style keyboard navigation because we're not animals.
@@ -35,4 +35,4 @@ use it to plan your next sprint.
 
 ---
 
-*[github](https://github.com/kollwitz-owen/worklog) · mit licensed*
+*[github](https://github.com/kollwitz-owen/hrs) · mit licensed*

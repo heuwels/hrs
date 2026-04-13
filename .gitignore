@@ -1,4 +1,4 @@
-worklog
-worklog.db
+hrs
+*.db
 /*.md
 !README.md

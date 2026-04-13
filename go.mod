@@ -1,4 +1,4 @@
-module github.com/kollwitz-owen/worklog
+module github.com/kollwitz-owen/hrs
 
 go 1.26.2
 

@@ -8,7 +8,7 @@ default: `http://localhost:9746`
 
 ## POST /entries
 
-create a worklog entry.
+create an entry.
 
 ```json
 {

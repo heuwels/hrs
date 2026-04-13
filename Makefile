@@ -1,10 +1,10 @@
 .PHONY: build test clean
 
 build:
-	go build -o worklog .
+	go build -o hrs .
 
 test:
 	go test -v -race ./...
 
 clean:
-	rm -f worklog worklog.db
+	rm -f hrs *.db

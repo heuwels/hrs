@@ -143,7 +143,7 @@ func (m tuiModel) View() string {
 	if m.date == today {
 		header += " (today)"
 	}
-	fmt.Fprintf(&b, " %s  %s\n\n", titleStyle.Render("worklog"), header)
+	fmt.Fprintf(&b, " %s  %s\n\n", titleStyle.Render("hrs"), header)
 
 	if len(m.entries) == 0 {
 		b.WriteString(hoursStyle.Render("  No entries.\n"))

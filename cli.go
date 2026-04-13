@@ -14,9 +14,9 @@ import (
 )
 
 func cmdServe(args []string) error {
-	fs := flag.NewFlagSet("worklog serve", flag.ExitOnError)
+	fs := flag.NewFlagSet("hrs serve", flag.ExitOnError)
 	port := fs.Int("port", 9746, "listen port")
-	dbPath := fs.String("db", "worklog.db", "sqlite database path")
+	dbPath := fs.String("db", "hrs.db", "sqlite database path")
 	logDir := fs.String("dir", ".", "markdown output directory")
 	fs.Parse(args)
 
@@ -48,7 +48,7 @@ func cmdServe(args []string) error {
 		srv.Close()
 	}()
 
-	fmt.Fprintf(os.Stderr, "worklog listening on http://%s\n", addr)
+	fmt.Fprintf(os.Stderr, "hrs listening on http://%s\n", addr)
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		return err
 	}
@@ -56,8 +56,8 @@ func cmdServe(args []string) error {
 }
 
 func cmdLog(args []string) error {
-	fs := flag.NewFlagSet("worklog log", flag.ExitOnError)
-	dbPath := fs.String("db", "worklog.db", "sqlite database path")
+	fs := flag.NewFlagSet("hrs log", flag.ExitOnError)
+	dbPath := fs.String("db", "hrs.db", "sqlite database path")
 	logDir := fs.String("dir", ".", "markdown output directory")
 	category := fs.String("c", "", "category (e.g. dev, admin, security)")
 	title := fs.String("t", "", "title")
@@ -108,8 +108,8 @@ func cmdLog(args []string) error {
 }
 
 func cmdLs(args []string) error {
-	fs := flag.NewFlagSet("worklog ls", flag.ExitOnError)
-	dbPath := fs.String("db", "worklog.db", "sqlite database path")
+	fs := flag.NewFlagSet("hrs ls", flag.ExitOnError)
+	dbPath := fs.String("db", "hrs.db", "sqlite database path")
 	fs.Parse(args)
 
 	date := now().Format("2006-01-02")
@@ -138,8 +138,8 @@ func cmdLs(args []string) error {
 }
 
 func cmdTUI(args []string) error {
-	fs := flag.NewFlagSet("worklog tui", flag.ExitOnError)
-	dbPath := fs.String("db", "worklog.db", "sqlite database path")
+	fs := flag.NewFlagSet("hrs tui", flag.ExitOnError)
+	dbPath := fs.String("db", "hrs.db", "sqlite database path")
 	fs.Parse(args)
 
 	date := now().Format("2006-01-02")
@@ -160,7 +160,7 @@ func cmdTUI(args []string) error {
 }
 
 func cmdDocs(args []string) error {
-	fs := flag.NewFlagSet("worklog docs", flag.ExitOnError)
+	fs := flag.NewFlagSet("hrs docs", flag.ExitOnError)
 	port := fs.Int("port", 9747, "listen port")
 	fs.Parse(args)
 
@@ -182,8 +182,8 @@ func cmdDocs(args []string) error {
 }
 
 func cmdMigrate(args []string) error {
-	fs := flag.NewFlagSet("worklog migrate", flag.ExitOnError)
-	dbPath := fs.String("db", "worklog.db", "sqlite database path")
+	fs := flag.NewFlagSet("hrs migrate", flag.ExitOnError)
+	dbPath := fs.String("db", "hrs.db", "sqlite database path")
 	logDir := fs.String("dir", ".", "directory with existing markdown files")
 	fs.Parse(args)
 

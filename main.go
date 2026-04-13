@@ -5,15 +5,15 @@ import (
 	"os"
 )
 
-const usage = `worklog - timesheets for your agent
+const usage = `hrs - timesheets for your agent
 
 usage:
-  worklog serve [flags]     start the API server
-  worklog log [flags]       add a worklog entry
-  worklog ls [date]         list entries (default: today)
-  worklog tui [date]        interactive explorer
-  worklog migrate [flags]   import existing markdown files
-  worklog docs [flags]      serve the documentation site
+  hrs serve [flags]     start the API server
+  hrs log [flags]       add an entry
+  hrs ls [date]         list entries (default: today)
+  hrs tui [date]        interactive explorer
+  hrs migrate [flags]   import existing markdown files
+  hrs docs [flags]      serve the documentation site
 `
 
 func main() {

@@ -29,7 +29,7 @@ const pageTmpl = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{.Title}} — worklog</title>
+<title>{{.Title}} — hrs</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'SF Mono','Cascadia Code','Fira Code',monospace;
@@ -68,7 +68,7 @@ func renderMD(src string) (title, body string) {
 		title = m[2]
 	}
 	if title == "" {
-		title = "worklog"
+		title = "hrs"
 	}
 
 	s := src

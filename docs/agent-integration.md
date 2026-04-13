@@ -12,7 +12,7 @@ running in `~/projects/my-app/`.
 
 ## the solution
 
-worklog runs as a local daemon. agents post entries via http from
+hrs runs as a local daemon. agents post entries via http from
 anywhere. the server writes the markdown files.
 
 ## example: claude code
