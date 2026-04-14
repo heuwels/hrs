@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>hrs — timesheets for your agent</title>
+  <meta name="description" content="A tiny HTTP server backed by SQLite that AI agents can post work entries to from any directory. Renders markdown for humans.">
+  <link rel="stylesheet" href="/style.css">
+  <script>
+    (function () {
+      var t = localStorage.getItem('theme');
+      if (t) document.documentElement.setAttribute('data-theme', t);
+      else if (window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme', 'dark');
+      else document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
+</head>
+<body>
+
+<header class="hero">
+  <div class="container">
+    <h1>hrs</h1>
+    <p class="tagline">Timesheets for your agent. A tiny HTTP + SQLite server that every AI agent can POST work entries to.</p>
+    <nav class="hero-nav">
+      <a href="https://github.com/heuwels/hrs#getting-started" class="hero-nav__primary">Get Started</a>
+      <span class="hero-nav__sep">&middot;</span>
+      <a href="https://github.com/heuwels/hrs#api">API</a>
+      <span class="hero-nav__sep">&middot;</span>
+      <a href="https://github.com/heuwels/hrs" class="github-link" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      </a>
+    </nav>
+
+    <div class="terminal-wrap">
+      <div class="terminal">
+        <div class="terminal-bar"><span></span><span></span><span></span></div>
+        <div class="terminal-body"><span class="t-prompt">~</span> <span class="t-cmd">hrs ls</span>
+
+ <span class="t-h1">hrs</span>  <span style="color:#d29922;font-weight:700">2026-04-14</span> (today)
+
+<span class="t-sel">&gt; </span><span class="t-sel">[dev]</span> <span class="t-title">hrs v1.0.0 released</span> <span class="t-hours">(~6h)</span>
+    <span class="t-bullet">- Built Go timesheet server for AI agents</span>
+    <span class="t-bullet">- CLI subcommands: serve/log/ls/tui/migrate/docs</span>
+    <span class="t-bullet">- Smart log: server-first with direct DB fallback</span>
+
+  <span class="t-cat">[security]</span> <span class="t-title">Audit CloudFront signed URLs</span> <span class="t-hours">(~2h)</span>
+    <span class="t-bullet">- Reviewed token expiry and key rotation</span>
+    <span class="t-bullet">- Updated IAM policy for least privilege</span>
+
+  <span class="t-cat">[admin]</span> <span class="t-title">Xero bill entry via MCP</span> <span class="t-hours">(~0.5h)</span>
+    <span class="t-bullet">- Created 6 supplier bills via API</span>
+
+  <span class="t-dim">  &#x25BC; 4 more below</span>
+
+  <span class="t-summary">  10 entries  ~18.5h  2.3d</span>
+  <span class="t-dim">  j/k scroll  h/l day  g/G top/bottom  t today  q quit</span></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="pitch">
+  <div class="container">
+    <h2>The <span class="accent">problem</span></h2>
+    <p class="pitch-intro">
+      You run a dozen AI agents across different repos. At 5pm you have no idea what happened today. Each agent is sandboxed to its own working directory and can't write to a shared worklog.
+    </p>
+    <h2>The <span class="accent">fix</span></h2>
+    <p class="pitch-intro">
+      <strong>hrs</strong> is a local daemon that gives every agent a single HTTP endpoint to push structured work entries to. You get markdown files on disk and a TUI to see what got done.
+    </p>
+  </div>
+</section>
+
+<hr class="section-rule">
+
+<section class="pitch" id="features">
+  <div class="container">
+    <h2>How it <span class="accent">works</span></h2>
+    <div class="features-grid">
+      <div class="feature">
+        <div class="feature-icon">&#x1F4E1;</div>
+        <h3>HTTP + CLI</h3>
+        <p>Agents POST JSON to <code>localhost:9746/entries</code>. Humans use <code>hrs log</code>. Both work, same database.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F50D;</div>
+        <h3>Self-discovery</h3>
+        <p>Agents call <code>GET /schema</code> to learn the API. No hardcoded formats in your prompts.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F4C4;</div>
+        <h3>Markdown on disk</h3>
+        <p>Every entry lands in SQLite and renders to daily markdown files. Human-readable, git-friendly, grep-able.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F5A5;</div>
+        <h3>Terminal UI</h3>
+        <p>Vim-style TUI to browse entries by day. Scroll with j/k, switch days with h/l. All in your terminal.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x26A1;</div>
+        <h3>Smart fallback</h3>
+        <p>The CLI tries the server first, then writes directly to SQLite. Works whether the daemon is running or not.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F4E6;</div>
+        <h3>Single binary</h3>
+        <p>One Go binary. No runtime deps. <code>go install</code> and you're done. DB auto-creates at <code>~/.hrs/hrs.db</code>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="section-rule">
+
+<section class="install" id="install">
+  <div class="container">
+    <h2>Get <span class="accent">started</span></h2>
+    <pre><code><span class="comment"># Install</span>
+go install github.com/heuwels/hrs@latest
+
+<span class="comment"># Start the daemon (optional &mdash; CLI works without it)</span>
+hrs serve &amp;
+
+<span class="comment"># Log from any agent or terminal</span>
+hrs log -c dev -t "built auth flow" -b "oauth2 pkce,token refresh,tests" -e 3
+
+<span class="comment"># See what happened today</span>
+hrs ls
+
+<span class="comment"># Or browse interactively</span>
+hrs tui</code></pre>
+    <p>See the <a href="https://github.com/heuwels/hrs#readme">full docs</a> for agent integration, API reference, and migration from existing worklogs.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <nav class="footer-nav">
+      <a href="https://github.com/heuwels/hrs" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="https://github.com/heuwels/hrs#api">API</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="https://github.com/heuwels/hrs#agent-integration">Agent Integration</a>
+    </nav>
+    <p class="footer-copy"><em>hrs</em> &middot; timesheets for your agent &middot; a <a href="https://github.com/heuwels">heuwels</a> project &middot; MIT licensed</p>
+  </div>
+</footer>
+
+<button type="button" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
+  <span class="icon-sun">&#x2600;</span>
+  <span class="icon-moon">&#x1F319;</span>
+</button>
+
+<script>
+  function toggleTheme() {
+    var current = document.documentElement.getAttribute('data-theme');
+    var next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+  }
+</script>
+
+</body>
+</html>

@@ -192,7 +192,7 @@ func cmdDocs(args []string) error {
 	fs.Parse(args)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", *port)
-	srv := &http.Server{Addr: addr, Handler: siteHandler()}
+	srv := &http.Server{Addr: addr, Handler: http.HandlerFunc(docsHandler)}
 
 	go func() {
 		ch := make(chan os.Signal, 1)
