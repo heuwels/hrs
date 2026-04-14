@@ -1,17 +1,36 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+func logViaServer(port int, e *Entry) (string, error) {
+	body, _ := json.Marshal(e)
+	url := fmt.Sprintf("http://127.0.0.1:%d/entries", port)
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return "", fmt.Errorf("server returned %d", resp.StatusCode)
+	}
+	out, _ := io.ReadAll(resp.Body)
+	return strings.TrimSpace(string(out)), nil
+}
 
 func cmdServe(args []string) error {
 	fs := flag.NewFlagSet("hrs serve", flag.ExitOnError)
@@ -59,6 +78,7 @@ func cmdLog(args []string) error {
 	fs := flag.NewFlagSet("hrs log", flag.ExitOnError)
 	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
 	logDir := fs.String("dir", DefaultDir(), "markdown output directory")
+	port := fs.Int("port", 9746, "server port to try before direct DB write")
 	category := fs.String("c", "", "category (e.g. dev, admin, security)")
 	title := fs.String("t", "", "title")
 	bullets := fs.String("b", "", "bullets (comma-separated)")
@@ -70,12 +90,6 @@ func cmdLog(args []string) error {
 	if *category == "" || *title == "" || *bullets == "" {
 		return fmt.Errorf("required: -c category -t title -b bullets")
 	}
-
-	db, err := OpenDB(*dbPath)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
 
 	parts := strings.Split(*bullets, ",")
 	for i := range parts {
@@ -90,6 +104,19 @@ func cmdLog(args []string) error {
 		Bullets:  parts,
 		HoursEst: *hours,
 	}
+
+	// Try the server first — avoids SQLite lock contention with concurrent agents
+	if resp, err := logViaServer(*port, e); err == nil {
+		fmt.Println(resp)
+		return nil
+	}
+
+	// Fall back to direct DB write
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
 
 	id, err := InsertEntry(db, e)
 	if err != nil {

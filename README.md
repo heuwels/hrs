@@ -30,13 +30,33 @@ go build -o hrs .
 ## Usage
 
 ```bash
-hrs serve   --db ~/hrs.db --dir ~/worklogs/   # start the API server
-hrs log     -db ~/hrs.db -c dev -t "title" -b "bullet one,bullet two" -e 2
-hrs ls      -db ~/hrs.db                       # print today's entries
-hrs ls      -db ~/hrs.db 2026-04-07            # print a specific date
-hrs tui     -db ~/hrs.db                       # interactive explorer (vim keys)
-hrs migrate --db ~/hrs.db --dir ~/worklogs/    # import existing markdown
-hrs docs                                       # serve the documentation site
+hrs log -c dev -t "built auth flow" -b "oauth2 pkce,token refresh,tests" -e 3
+hrs ls                               # print today's entries
+hrs ls 2026-04-07                    # print a specific date
+hrs tui                              # interactive explorer (vim keys)
+```
+
+That's it. DB auto-creates at `~/.hrs/hrs.db`. Override with `--db` to point at different workspaces.
+
+### Multi-agent mode
+
+When you have multiple AI agents logging concurrently, run the server to serialise writes:
+
+```bash
+hrs serve &                          # start the API server (default: localhost:9746)
+```
+
+`hrs log` automatically detects the server and routes through it. If the server isn't running, it falls back to direct DB writes. No config needed either way.
+
+### All commands
+
+```bash
+hrs log     -c dev -t "title" -b "bullets" -e 2   # log an entry
+hrs ls      [date]                                  # list entries
+hrs tui     [date]                                  # interactive TUI
+hrs serve   [--port 9746]                           # start API server
+hrs migrate --dir ~/old-worklogs/                   # import markdown files
+hrs docs                                            # serve documentation site
 ```
 
 The `--dir` flag controls where markdown files are rendered. Point it at a directory your TUI or editor watches.
