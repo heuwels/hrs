@@ -1,4 +1,4 @@
-module github.com/kollwitz-owen/hrs
+module github.com/heuwels/hrs
 
 go 1.26.2
 

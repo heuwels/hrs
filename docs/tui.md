@@ -35,4 +35,4 @@ use it to plan your next sprint.
 
 ---
 
-*[github](https://github.com/kollwitz-owen/hrs) · mit licensed*
+*[github](https://github.com/heuwels/hrs) · mit licensed*

@@ -21,7 +21,7 @@ to from any directory. renders markdown for humans.
 - [api reference](/api)
 - [agent integration](/agent-integration)
 - [tui explorer](/tui)
-- [github](https://github.com/kollwitz-owen/hrs)
+- [github](https://github.com/heuwels/hrs)
 
 ---
 
@@ -48,4 +48,4 @@ in your prompts.
 
 ---
 
-*a [ko promotions](https://github.com/kollwitz-owen) project. mit licensed.*
+*a [heuwels](https://github.com/heuwels) project. mit licensed.*

@@ -16,13 +16,13 @@ AI coding agents (Claude Code, Cursor, etc.) can't write files outside their wor
 ## Install
 
 ```bash
-go install github.com/kollwitz-owen/hrs@latest
+go install github.com/heuwels/hrs@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/kollwitz-owen/hrs
+git clone https://github.com/heuwels/hrs
 cd hrs
 go build -o hrs .
 ```

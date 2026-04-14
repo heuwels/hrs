@@ -7,13 +7,13 @@
 ## install
 
 ```bash
-go install github.com/kollwitz-owen/hrs@latest
+go install github.com/heuwels/hrs@latest
 ```
 
 or build from source:
 
 ```bash
-git clone https://github.com/kollwitz-owen/hrs
+git clone https://github.com/heuwels/hrs
 cd hrs
 go build -o hrs .
 ```
