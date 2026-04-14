@@ -131,7 +131,7 @@ Each POST syncs a `YYYY-MM-DD.md` file in `--dir`:
 
 ## Agent integration
 
-Add something like this to your `CLAUDE.md` (or equivalent agent instructions). Here's an abridged version of how we use it at KO:
+Add something like this to your `CLAUDE.md` (or equivalent agent instructions). Here's how we use it:
 
 ````markdown
 ## Work Logging
