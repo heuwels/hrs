@@ -18,6 +18,7 @@ var (
 	summaryStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
 	helpStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	selStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))
+	moreStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
 )
 
 type tuiModel struct {
@@ -83,16 +84,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "j", "down":
 			if m.cursor < len(m.entries)-1 {
 				m.cursor++
-				if m.cursor-m.offset >= m.viewHeight() {
-					m.offset++
-				}
+				m.scrollToCursor()
 			}
 		case "k", "up":
 			if m.cursor > 0 {
 				m.cursor--
-				if m.cursor < m.offset {
-					m.offset = m.cursor
-				}
+				m.scrollToCursor()
 			}
 		case "h", "left":
 			// Older (dates are descending)
@@ -111,9 +108,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.offset = 0
 		case "G":
 			m.cursor = max(0, len(m.entries)-1)
-			if m.cursor-m.offset >= m.viewHeight() {
-				m.offset = m.cursor - m.viewHeight() + 1
-			}
+			m.scrollToCursor()
 		case "t":
 			m.date = now().Format("2006-01-02")
 			m.loadDates()
@@ -126,12 +121,38 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m tuiModel) entryHeight(i int) int {
+	// title line + bullet lines + blank line
+	return 1 + len(m.entries[i].Bullets) + 1
+}
+
 func (m tuiModel) viewHeight() int {
-	h := m.height - 4 // header + footer
+	h := m.height - 4 // header + footer + summary
 	if h < 1 {
 		h = 20
 	}
 	return h
+}
+
+func (m *tuiModel) scrollToCursor() {
+	vh := m.viewHeight()
+
+	// Ensure offset doesn't go past cursor
+	if m.cursor < m.offset {
+		m.offset = m.cursor
+	}
+
+	// Calculate lines from offset to end of cursor entry
+	for {
+		lines := 0
+		for i := m.offset; i <= m.cursor && i < len(m.entries); i++ {
+			lines += m.entryHeight(i)
+		}
+		if lines <= vh || m.offset >= m.cursor {
+			break
+		}
+		m.offset++
+	}
 }
 
 func (m tuiModel) View() string {
@@ -149,13 +170,28 @@ func (m tuiModel) View() string {
 		b.WriteString(hoursStyle.Render("  No entries.\n"))
 	} else {
 		vh := m.viewHeight()
-		end := m.offset + vh
-		if end > len(m.entries) {
-			end = len(m.entries)
+		// Find how many entries fit from offset
+		end := m.offset
+		visibleLines := 0
+		for end < len(m.entries) {
+			h := m.entryHeight(end)
+			if visibleLines+h > vh {
+				break
+			}
+			visibleLines += h
+			end++
+		}
+		if end == m.offset && end < len(m.entries) {
+			end++
 		}
 		var totalHours float64
 		for _, e := range m.entries {
 			totalHours += e.HoursEst
+		}
+
+		// "More above" indicator
+		if m.offset > 0 {
+			fmt.Fprintf(&b, "%s\n", moreStyle.Render(fmt.Sprintf("  ▲ %d more above", m.offset)))
 		}
 
 		for i := m.offset; i < end; i++ {
@@ -186,6 +222,11 @@ func (m tuiModel) View() string {
 				fmt.Fprintf(&b, "    %s\n", bulletStyle.Render("- "+line))
 			}
 			b.WriteByte('\n')
+		}
+
+		// "More below" indicator
+		if end < len(m.entries) {
+			fmt.Fprintf(&b, "%s\n", moreStyle.Render(fmt.Sprintf("  ▼ %d more below", len(m.entries)-end)))
 		}
 
 		// Summary line
