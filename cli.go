@@ -16,8 +16,8 @@ import (
 func cmdServe(args []string) error {
 	fs := flag.NewFlagSet("hrs serve", flag.ExitOnError)
 	port := fs.Int("port", 9746, "listen port")
-	dbPath := fs.String("db", "hrs.db", "sqlite database path")
-	logDir := fs.String("dir", ".", "markdown output directory")
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	logDir := fs.String("dir", DefaultDir(), "markdown output directory")
 	fs.Parse(args)
 
 	db, err := OpenDB(*dbPath)
@@ -57,8 +57,8 @@ func cmdServe(args []string) error {
 
 func cmdLog(args []string) error {
 	fs := flag.NewFlagSet("hrs log", flag.ExitOnError)
-	dbPath := fs.String("db", "hrs.db", "sqlite database path")
-	logDir := fs.String("dir", ".", "markdown output directory")
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	logDir := fs.String("dir", DefaultDir(), "markdown output directory")
 	category := fs.String("c", "", "category (e.g. dev, admin, security)")
 	title := fs.String("t", "", "title")
 	bullets := fs.String("b", "", "bullets (comma-separated)")
@@ -109,7 +109,7 @@ func cmdLog(args []string) error {
 
 func cmdLs(args []string) error {
 	fs := flag.NewFlagSet("hrs ls", flag.ExitOnError)
-	dbPath := fs.String("db", "hrs.db", "sqlite database path")
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
 	fs.Parse(args)
 
 	date := now().Format("2006-01-02")
@@ -139,7 +139,7 @@ func cmdLs(args []string) error {
 
 func cmdTUI(args []string) error {
 	fs := flag.NewFlagSet("hrs tui", flag.ExitOnError)
-	dbPath := fs.String("db", "hrs.db", "sqlite database path")
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
 	fs.Parse(args)
 
 	date := now().Format("2006-01-02")
@@ -183,8 +183,8 @@ func cmdDocs(args []string) error {
 
 func cmdMigrate(args []string) error {
 	fs := flag.NewFlagSet("hrs migrate", flag.ExitOnError)
-	dbPath := fs.String("db", "hrs.db", "sqlite database path")
-	logDir := fs.String("dir", ".", "directory with existing markdown files")
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	logDir := fs.String("dir", DefaultDir(), "directory with existing markdown files")
 	fs.Parse(args)
 
 	db, err := OpenDB(*dbPath)
