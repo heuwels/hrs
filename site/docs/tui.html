@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TUI Explorer — hrs</title>
+  <link rel="stylesheet" href="/style.css">
+  <script>
+    (function () {
+      var t = localStorage.getItem('theme');
+      if (t) document.documentElement.setAttribute('data-theme', t);
+      else if (window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme', 'dark');
+      else document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
+</head>
+<body>
+
+<header class="docs-header">
+  <div class="container">
+    <div class="breadcrumb"><a href="/">hrs</a> / <a href="/docs/">docs</a></div>
+    <h1>TUI Explorer</h1>
+  </div>
+</header>
+
+<section class="docs-body">
+  <div class="container">
+
+    <pre><code>hrs tui</code></pre>
+    <p>Vim-style keyboard navigation because we're not animals.</p>
+
+    <h2>Keybindings</h2>
+    <table>
+      <tr><th>Key</th><th>Action</th></tr>
+      <tr><td><code>j</code> / <code>k</code></td><td>Scroll entries</td></tr>
+      <tr><td><code>h</code> / <code>l</code></td><td>Previous / next day</td></tr>
+      <tr><td><code>g</code> / <code>G</code></td><td>Jump to top / bottom</td></tr>
+      <tr><td><code>t</code></td><td>Jump to today</td></tr>
+      <tr><td><code>r</code></td><td>Refresh</td></tr>
+      <tr><td><code>q</code></td><td>Quit</td></tr>
+    </table>
+
+    <h2 id="hours-caveat">Hours caveat</h2>
+    <p>The <code>hours_est</code> field asks the AI to estimate how long the work would take a competent developer without AI assistance. This is useful for understanding throughput, but take it with a grain of salt.</p>
+    <p>AI agents tend to overstate the complexity of tasks they've completed. A "~4h" estimate for something that took 3 minutes of wall clock time is flattering but not always realistic. The daily summaries roll these up into "person-days saved" which makes for a nice story &mdash; just don't use it to plan your next sprint.</p>
+
+    <div class="doc-nav">
+      <a href="/docs/agent-integration.html">&larr; Agent Integration</a>
+      <span></span>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <nav class="footer-nav">
+      <a href="/">Home</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="/docs/">Docs</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="https://github.com/heuwels/hrs" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="https://github.com/sponsors/3stacks" target="_blank" rel="noopener noreferrer">Sponsor</a>
+    </nav>
+    <p class="footer-copy"><em>hrs</em> &middot; a <a href="https://github.com/heuwels" target="_blank" rel="noopener noreferrer">heuwels</a> project</p>
+  </div>
+</footer>
+
+<button type="button" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
+  <span class="icon-sun">&#x2600;</span>
+  <span class="icon-moon">&#x1F319;</span>
+</button>
+<script>
+function toggleTheme() {
+  var c = document.documentElement.getAttribute('data-theme');
+  var n = c === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', n);
+  localStorage.setItem('theme', n);
+}
+</script>
+</body>
+</html>

@@ -271,6 +271,61 @@ footer {
 .footer-sep { color: var(--text-muted); user-select: none; }
 .footer-copy { color: var(--text-muted); font-size: 0.8rem; }
 
+/* --- Docs Pages --- */
+.docs-header {
+  background: var(--hero-bg);
+  padding: 2rem 0 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.docs-header .breadcrumb {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+.docs-header .breadcrumb a { color: var(--text-muted); }
+.docs-header .breadcrumb a:hover { color: var(--text); }
+.docs-header h1 { font-size: 1.75rem; font-weight: 700; }
+
+.docs-body { padding: 3rem 0 4rem; }
+.docs-body h2 {
+  font-size: 1.4rem; font-weight: 700;
+  margin-top: 2.5rem; margin-bottom: 0.75rem;
+  padding-top: 1rem; border-top: 1px solid var(--border);
+}
+.docs-body h2:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+.docs-body h3 { font-size: 1.1rem; font-weight: 600; margin-top: 1.75rem; margin-bottom: 0.5rem; }
+.docs-body p { margin-bottom: 1rem; }
+.docs-body ul, .docs-body ol { margin-bottom: 1rem; padding-left: 1.5rem; }
+.docs-body li { margin-bottom: 0.35rem; }
+.docs-body pre {
+  background: var(--code-bg); color: var(--code-text);
+  padding: 1.25rem 1.5rem; border-radius: 8px; overflow-x: auto;
+  font-size: 0.85rem; line-height: 1.6; margin-bottom: 1.5rem;
+}
+.docs-body code {
+  background: var(--bg-alt); padding: 0.15rem 0.4rem;
+  border-radius: 4px; font-size: 0.85em;
+}
+.docs-body pre code { background: none; padding: 0; border-radius: 0; font-size: inherit; }
+.docs-body table { border-collapse: collapse; margin-bottom: 1.5rem; width: 100%; font-size: 0.9rem; }
+.docs-body th, .docs-body td {
+  text-align: left; padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.docs-body th { font-weight: 600; font-size: 0.8rem; color: var(--text-muted); }
+.docs-body strong { font-weight: 600; }
+.docs-body hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+.docs-body .doc-nav {
+  display: flex; justify-content: space-between; margin-top: 2rem;
+  padding-top: 1rem; border-top: 1px solid var(--border);
+}
+.docs-body .doc-nav a { font-size: 0.9rem; }
+
+.docs-index { list-style: none; padding: 0; }
+.docs-index li { margin-bottom: 0.75rem; }
+.docs-index a { font-size: 1.05rem; font-weight: 500; }
+.docs-index .desc { display: block; font-size: 0.9rem; color: var(--text-muted); }
+
 /* --- Responsive --- */
 @media (max-width: 640px) {
   .hero { padding: 2rem 0 3rem; }

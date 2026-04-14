@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Integration — hrs</title>
+  <link rel="stylesheet" href="/style.css">
+  <script>
+    (function () {
+      var t = localStorage.getItem('theme');
+      if (t) document.documentElement.setAttribute('data-theme', t);
+      else if (window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme', 'dark');
+      else document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
+</head>
+<body>
+
+<header class="docs-header">
+  <div class="container">
+    <div class="breadcrumb"><a href="/">hrs</a> / <a href="/docs/">docs</a></div>
+    <h1>Agent Integration</h1>
+  </div>
+</header>
+
+<section class="docs-body">
+  <div class="container">
+
+    <h2>The problem</h2>
+    <p>AI coding agents are sandboxed to their working directory. They can't write to a shared worklog at <code>~/worklogs/2026-04-13.md</code> if they're running in <code>~/projects/my-app/</code>.</p>
+
+    <h2>Two ways to log</h2>
+    <p>Agents can use either the <strong>CLI</strong> or the <strong>HTTP daemon</strong> &mdash; both write to the same SQLite database and produce the same markdown output.</p>
+
+    <h3>Option A: CLI (<code>hrs log</code>)</h3>
+    <p>The simplest option. No daemon needed &mdash; the CLI writes directly to the database.</p>
+    <pre><code>hrs log -c dev -t "built auth flow" -b "oauth2 pkce,token refresh,tests" -e 3</code></pre>
+    <p>This works if your agent is allowed to run arbitrary commands.</p>
+
+    <h3>Option B: HTTP daemon (<code>hrs serve</code>)</h3>
+    <p>If your agent is sandboxed and can't write outside its project directory, run the daemon and have agents POST via HTTP instead.</p>
+    <p>This is useful when you use tools like <a href="https://github.com/brycehans/toolgate" target="_blank" rel="noopener noreferrer">toolgate</a> to restrict file writes to the project root &mdash; the agent can still log work via HTTP without needing write access to the hrs database.</p>
+    <pre><code># start the daemon (once)
+hrs serve &amp;
+
+# agents post entries from any directory
+curl -s -X POST http://localhost:9746/entries -d '{
+  "category": "dev",
+  "title": "built auth flow",
+  "bullets": ["oauth2 pkce", "token refresh", "tests"],
+  "hours_est": 3
+}'</code></pre>
+    <p>Agents can self-discover fields via <code>GET /schema</code>.</p>
+
+    <h3>Which to use?</h3>
+    <table>
+      <tr><th></th><th>CLI</th><th>HTTP</th></tr>
+      <tr><td>Setup</td><td>none</td><td>run <code>hrs serve</code></td></tr>
+      <tr><td>Works sandboxed</td><td>no (needs DB write)</td><td>yes</td></tr>
+      <tr><td>Works without daemon</td><td>yes</td><td>no</td></tr>
+      <tr><td>Output</td><td>same</td><td>same</td></tr>
+    </table>
+    <p>The CLI itself is smart &mdash; it tries the HTTP server first, then falls back to a direct database write. So if the daemon is running, <code>hrs log</code> uses it automatically.</p>
+
+    <h2>Example: Claude Code</h2>
+    <p>Add to your <code>CLAUDE.md</code>:</p>
+    <pre><code>## Work Logging
+
+After completing significant work, log it:
+
+```bash
+hrs log -c dev -t "Short description" -b "outcome one,outcome two" -e 2
+```
+
+Log proactively. Don't wait to be asked.</code></pre>
+
+    <p>If using toolgate or another sandbox that blocks writes outside the project directory, use curl instead:</p>
+    <pre><code>## Work Logging
+
+After completing significant work, log it:
+
+```bash
+curl -s -X POST http://localhost:9746/entries -d '{
+  "category": "dev",
+  "title": "Short description of work",
+  "bullets": ["What was accomplished", "Key outcomes"],
+  "hours_est": 2
+}'
+```
+
+Discover fields: `curl -s http://localhost:9746/schema`
+
+Log proactively. Don't wait to be asked.</code></pre>
+
+    <h2>Example: Cursor / other agents</h2>
+    <p>Same pattern &mdash; any agent that can shell out can log:</p>
+    <pre><code># CLI
+hrs log -c dev -t "..." -b "..." -e 1
+
+# or HTTP
+curl -s -X POST http://localhost:9746/entries \
+  -H "Content-Type: application/json" \
+  -d '{"category":"dev","title":"...","bullets":["..."],"hours_est":1}'</code></pre>
+
+    <h2>Tips</h2>
+    <ul>
+      <li><strong>Log during work, not after</strong> &mdash; agents forget context fast</li>
+      <li><strong>Be generous with hours_est</strong> &mdash; but read the <a href="/docs/tui.html#hours-caveat">caveat</a></li>
+      <li><strong>Category matters</strong> &mdash; helps filter in the TUI later</li>
+      <li><strong>Bullets should be outcomes</strong> &mdash; "deployed X" not "worked on X"</li>
+    </ul>
+
+    <div class="doc-nav">
+      <a href="/docs/api.html">&larr; API Reference</a>
+      <a href="/docs/tui.html">TUI Explorer &rarr;</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <nav class="footer-nav">
+      <a href="/">Home</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="/docs/">Docs</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="https://github.com/heuwels/hrs" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="https://github.com/sponsors/3stacks" target="_blank" rel="noopener noreferrer">Sponsor</a>
+    </nav>
+    <p class="footer-copy"><em>hrs</em> &middot; a <a href="https://github.com/heuwels" target="_blank" rel="noopener noreferrer">heuwels</a> project</p>
+  </div>
+</footer>
+
+<button type="button" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
+  <span class="icon-sun">&#x2600;</span>
+  <span class="icon-moon">&#x1F319;</span>
+</button>
+<script>
+function toggleTheme() {
+  var c = document.documentElement.getAttribute('data-theme');
+  var n = c === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', n);
+  localStorage.setItem('theme', n);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API Reference — hrs</title>
+  <link rel="stylesheet" href="/style.css">
+  <script>
+    (function () {
+      var t = localStorage.getItem('theme');
+      if (t) document.documentElement.setAttribute('data-theme', t);
+      else if (window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme', 'dark');
+      else document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
+</head>
+<body>
+
+<header class="docs-header">
+  <div class="container">
+    <div class="breadcrumb"><a href="/">hrs</a> / <a href="/docs/">docs</a></div>
+    <h1>API Reference</h1>
+  </div>
+</header>
+
+<section class="docs-body">
+  <div class="container">
+
+    <p>Default: <code>http://localhost:9746</code></p>
+
+    <h2>POST /entries</h2>
+    <p>Create an entry.</p>
+    <pre><code>{
+  "category": "dev",
+  "title": "built auth flow",
+  "bullets": ["oauth2 pkce", "token refresh"],
+  "hours_est": 3,
+  "date": "2026-04-13",
+  "time": "14:30"
+}</code></pre>
+
+    <table>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Default</th></tr>
+      <tr><td><code>category</code></td><td>string</td><td>yes</td><td></td></tr>
+      <tr><td><code>title</code></td><td>string</td><td>yes</td><td></td></tr>
+      <tr><td><code>bullets</code></td><td>[]string</td><td>yes</td><td></td></tr>
+      <tr><td><code>hours_est</code></td><td>number</td><td>no</td><td>0</td></tr>
+      <tr><td><code>date</code></td><td>string</td><td>no</td><td>today</td></tr>
+      <tr><td><code>time</code></td><td>string</td><td>no</td><td>now</td></tr>
+    </table>
+
+    <p>Returns <code>201</code>:</p>
+    <pre><code>{"id": 42, "date": "2026-04-13"}</code></pre>
+
+    <h2>GET /entries?date=YYYY-MM-DD</h2>
+    <p>List entries for a date. Defaults to today.</p>
+    <p>Returns <code>200</code> with a JSON array of entries.</p>
+
+    <h2>DELETE /entries/{id}</h2>
+    <p>Remove an entry by ID.</p>
+    <p>Returns <code>200</code>:</p>
+    <pre><code>{"deleted": 42}</code></pre>
+
+    <h2>GET /schema</h2>
+    <p>Returns field names, types, and descriptions. Agents can call this to self-discover the API without hardcoded instructions in their prompts.</p>
+    <pre><code>{
+  "endpoint": "POST /entries",
+  "fields": [
+    {"name": "category", "type": "string", "required": true, "description": "..."},
+    {"name": "title", "type": "string", "required": true, "description": "..."},
+    {"name": "bullets", "type": "[]string", "required": true, "description": "..."},
+    {"name": "hours_est", "type": "number", "required": false, "description": "..."},
+    {"name": "date", "type": "string", "required": false, "description": "..."},
+    {"name": "time", "type": "string", "required": false, "description": "..."}
+  ]
+}</code></pre>
+
+    <h2>GET /health</h2>
+    <pre><code>{"status": "ok"}</code></pre>
+
+    <div class="doc-nav">
+      <a href="/docs/getting-started.html">&larr; Getting Started</a>
+      <a href="/docs/agent-integration.html">Agent Integration &rarr;</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <nav class="footer-nav">
+      <a href="/">Home</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="/docs/">Docs</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="https://github.com/heuwels/hrs" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="https://github.com/sponsors/3stacks" target="_blank" rel="noopener noreferrer">Sponsor</a>
+    </nav>
+    <p class="footer-copy"><em>hrs</em> &middot; a <a href="https://github.com/heuwels" target="_blank" rel="noopener noreferrer">heuwels</a> project</p>
+  </div>
+</footer>
+
+<button type="button" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
+  <span class="icon-sun">&#x2600;</span>
+  <span class="icon-moon">&#x1F319;</span>
+</button>
+<script>
+function toggleTheme() {
+  var c = document.documentElement.getAttribute('data-theme');
+  var n = c === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', n);
+  localStorage.setItem('theme', n);
+}
+</script>
+</body>
+</html>

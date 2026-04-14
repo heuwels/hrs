@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docs — hrs</title>
+  <link rel="stylesheet" href="/style.css">
+  <script>
+    (function () {
+      var t = localStorage.getItem('theme');
+      if (t) document.documentElement.setAttribute('data-theme', t);
+      else if (window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme', 'dark');
+      else document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
+</head>
+<body>
+
+<header class="docs-header">
+  <div class="container">
+    <div class="breadcrumb"><a href="/">hrs</a> / docs</div>
+    <h1>Documentation</h1>
+  </div>
+</header>
+
+<section class="docs-body">
+  <div class="container">
+    <p>hrs is a tiny HTTP server backed by SQLite that AI agents can POST work entries to from any directory. It renders markdown for humans.</p>
+
+    <ul class="docs-index">
+      <li>
+        <a href="/docs/getting-started.html">Getting Started</a>
+        <span class="desc">Install, start the server, log your first entry, migrate existing worklogs</span>
+      </li>
+      <li>
+        <a href="/docs/api.html">API Reference</a>
+        <span class="desc">POST /entries, GET /entries, DELETE, schema discovery, health check</span>
+      </li>
+      <li>
+        <a href="/docs/agent-integration.html">Agent Integration</a>
+        <span class="desc">CLI vs HTTP, sandboxed agents, Claude Code and Cursor examples</span>
+      </li>
+      <li>
+        <a href="/docs/tui.html">TUI Explorer</a>
+        <span class="desc">Vim-style terminal UI, keybindings, hours estimate caveat</span>
+      </li>
+    </ul>
+
+    <hr>
+    <p><a href="https://github.com/heuwels/hrs" target="_blank" rel="noopener noreferrer">GitHub</a> &middot; MIT licensed</p>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <nav class="footer-nav">
+      <a href="/">Home</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="https://github.com/heuwels/hrs" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="https://github.com/sponsors/3stacks" target="_blank" rel="noopener noreferrer">Sponsor</a>
+    </nav>
+    <p class="footer-copy"><em>hrs</em> &middot; a <a href="https://github.com/heuwels" target="_blank" rel="noopener noreferrer">heuwels</a> project</p>
+  </div>
+</footer>
+
+<button type="button" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
+  <span class="icon-sun">&#x2600;</span>
+  <span class="icon-moon">&#x1F319;</span>
+</button>
+<script>
+function toggleTheme() {
+  var c = document.documentElement.getAttribute('data-theme');
+  var n = c === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', n);
+  localStorage.setItem('theme', n);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Getting Started — hrs</title>
+  <link rel="stylesheet" href="/style.css">
+  <script>
+    (function () {
+      var t = localStorage.getItem('theme');
+      if (t) document.documentElement.setAttribute('data-theme', t);
+      else if (window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-theme', 'dark');
+      else document.documentElement.setAttribute('data-theme', 'light');
+    })();
+  </script>
+</head>
+<body>
+
+<header class="docs-header">
+  <div class="container">
+    <div class="breadcrumb"><a href="/">hrs</a> / <a href="/docs/">docs</a></div>
+    <h1>Getting Started</h1>
+  </div>
+</header>
+
+<section class="docs-body">
+  <div class="container">
+
+    <h2>Install</h2>
+    <pre><code>go install github.com/heuwels/hrs@latest</code></pre>
+    <p>Or build from source:</p>
+    <pre><code>git clone https://github.com/heuwels/hrs
+cd hrs
+go build -o hrs .</code></pre>
+
+    <h2>Start the server</h2>
+    <pre><code>hrs serve --db ~/hrs.db --dir ~/worklogs/</code></pre>
+    <p><code>--dir</code> is where markdown files get rendered. Point it at a directory your editor or TUI watches.</p>
+
+    <h2>Log something</h2>
+    <pre><code># via CLI
+hrs log -c dev -t "first entry" -b "hello world" -e 0.1
+
+# via curl
+curl -X POST http://localhost:9746/entries -d '{
+  "category": "dev",
+  "title": "first entry",
+  "bullets": ["hello world"],
+  "hours_est": 0.1
+}'</code></pre>
+
+    <h2>View your logs</h2>
+    <pre><code># print today's log
+hrs ls
+
+# launch the TUI
+hrs tui</code></pre>
+
+    <h2>Migrate existing markdown</h2>
+    <p>If you have existing <code>YYYY-MM-DD.md</code> worklog files:</p>
+    <pre><code>hrs migrate --dir ~/worklogs/</code></pre>
+
+    <div class="doc-nav">
+      <a href="/docs/">&larr; Docs</a>
+      <a href="/docs/api.html">API Reference &rarr;</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <nav class="footer-nav">
+      <a href="/">Home</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="/docs/">Docs</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="https://github.com/heuwels/hrs" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="https://github.com/sponsors/3stacks" target="_blank" rel="noopener noreferrer">Sponsor</a>
+    </nav>
+    <p class="footer-copy"><em>hrs</em> &middot; a <a href="https://github.com/heuwels" target="_blank" rel="noopener noreferrer">heuwels</a> project</p>
+  </div>
+</footer>
+
+<button type="button" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
+  <span class="icon-sun">&#x2600;</span>
+  <span class="icon-moon">&#x1F319;</span>
+</button>
+<script>
+function toggleTheme() {
+  var c = document.documentElement.getAttribute('data-theme');
+  var n = c === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', n);
+  localStorage.setItem('theme', n);
+}
+</script>
+</body>
+</html>
