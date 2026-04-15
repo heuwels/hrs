@@ -11,9 +11,10 @@
 grab the latest release for your platform from
 [github releases](https://github.com/heuwels/hrs/releases/latest).
 
+extract and move to your PATH:
+
 ```bash
-# example: macos arm64
-curl -L https://github.com/heuwels/hrs/releases/latest/download/hrs_darwin_arm64.tar.gz | tar xz
+tar xzf hrs_*_darwin_arm64.tar.gz
 sudo mv hrs /usr/local/bin/
 ```
 
