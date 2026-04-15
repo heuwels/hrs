@@ -4,6 +4,7 @@ Timesheets for your agent. A tiny HTTP server backed by SQLite that AI agents ca
 
 ```
 POST /entries → log work
+PUT  /entries → update work
 GET  /entries → read back
 ```
 
@@ -15,11 +16,20 @@ AI coding agents (Claude Code, Cursor, etc.) can't write files outside their wor
 
 ## Install
 
+Download a binary from [GitHub Releases](https://github.com/heuwels/hrs/releases/latest) (macOS and Linux, amd64/arm64):
+
+```bash
+tar xzf hrs_*_darwin_arm64.tar.gz
+sudo mv hrs /usr/local/bin/
+```
+
+Or via Go:
+
 ```bash
 go install github.com/heuwels/hrs@latest
 ```
 
-Or build from source:
+Or build from source (no CGo, no C compiler needed):
 
 ```bash
 git clone https://github.com/heuwels/hrs
@@ -30,13 +40,33 @@ go build -o hrs .
 ## Usage
 
 ```bash
-hrs log -c dev -t "built auth flow" -b "oauth2 pkce,token refresh,tests" -e 3
+hrs log -c dev -t "built auth flow" -b "oauth2 pkce;token refresh;tests" -e 3
 hrs ls                               # print today's entries
-hrs ls 2026-04-07                    # print a specific date
+hrs ls 2026-04-14                    # print a specific date
 hrs tui                              # interactive explorer (vim keys)
 ```
 
-That's it. DB auto-creates at `~/.hrs/hrs.db`. Override with `--db` to point at different workspaces.
+That's it. DB auto-creates at `~/.hrs/hrs.db`. Override with `HRS_DB` env var or `--db` flag.
+
+### All commands
+
+```bash
+hrs log     -c dev -t "title" -b "bullets" -e 2   # log an entry
+hrs ls      [date]                                  # list entries (color TTY, markdown piped)
+hrs ls      --from 2026-04-01 --to 2026-04-15      # date range query
+hrs ls      --format json --category dev            # JSON output, category filter
+hrs tui     [date]                                  # interactive TUI
+hrs edit    <id> -t "new title" -e 3                # update an entry
+hrs rm      <id>                                    # delete an entry
+hrs export  --format csv --from 2026-04-01          # export as JSON or CSV
+hrs categories                                      # list all categories
+hrs serve   [--port 9746]                           # start API server
+hrs migrate --dir ~/old-worklogs/                   # import markdown files
+hrs docs                                            # serve documentation site
+hrs version                                         # print version
+```
+
+Bullets are separated by semicolons. The `--dir` flag controls where markdown files are rendered.
 
 ### Multi-agent mode
 
@@ -48,18 +78,12 @@ hrs serve &                          # start the API server (default: localhost:
 
 `hrs log` automatically detects the server and routes through it. If the server isn't running, it falls back to direct DB writes. No config needed either way.
 
-### All commands
+### Environment variables
 
-```bash
-hrs log     -c dev -t "title" -b "bullets" -e 2   # log an entry
-hrs ls      [date]                                  # list entries
-hrs tui     [date]                                  # interactive TUI
-hrs serve   [--port 9746]                           # start API server
-hrs migrate --dir ~/old-worklogs/                   # import markdown files
-hrs docs                                            # serve documentation site
-```
-
-The `--dir` flag controls where markdown files are rendered. Point it at a directory your TUI or editor watches.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HRS_DB` | `~/.hrs/hrs.db` | SQLite database path |
+| `HRS_DIR` | `~/.hrs/` | Markdown output directory |
 
 ## API
 
@@ -78,11 +102,21 @@ curl -X POST http://localhost:9746/entries -d '{
 }'
 ```
 
-`date` and `time` default to now if omitted.
+`date` and `time` default to now if omitted. Validation: date must be `YYYY-MM-DD`, time `HH:MM`, hours_est `0-24`, category/title/bullets non-empty.
 
-### `GET /entries?date=2026-04-13`
+### `PUT /entries/{id}`
 
-Returns JSON array of entries. Defaults to today.
+Update an existing entry. Same fields as POST.
+
+### `GET /entries`
+
+```bash
+GET /entries?date=2026-04-13              # single date (default: today)
+GET /entries?from=2026-04-01&to=2026-04-15  # date range
+GET /entries?from=2026-04-01&category=dev   # with category filter
+```
+
+Returns JSON array of entries.
 
 ### `DELETE /entries/{id}`
 
@@ -94,14 +128,22 @@ Returns field names, types, and descriptions so agents can self-discover the API
 
 ```json
 {
-  "endpoint": "POST /entries",
-  "fields": [
-    {"name": "category", "type": "string", "required": true, "description": "Work category, e.g. dev, security, admin, docs, infra"},
-    {"name": "title", "type": "string", "required": true, "description": "Concise label for the work performed"},
-    {"name": "bullets", "type": "[]string", "required": true, "description": "Terse, outcome-focused bullet points"},
-    {"name": "hours_est", "type": "number", "required": false, "description": "Estimated person-hours this would take without AI assistance"},
-    {"name": "date", "type": "string", "required": false, "description": "YYYY-MM-DD, defaults to today"},
-    {"name": "time", "type": "string", "required": false, "description": "HH:MM, defaults to now"}
+  "endpoints": [
+    {
+      "method": "POST",
+      "path": "/entries",
+      "fields": [
+        {"name": "category", "type": "string", "required": true, "description": "Work category, e.g. dev, security, admin"},
+        {"name": "title", "type": "string", "required": true, "description": "Concise label for the work performed"},
+        {"name": "bullets", "type": "[]string", "required": true, "description": "Terse, outcome-focused bullet points"},
+        {"name": "hours_est", "type": "number", "required": false, "description": "Estimated person-hours without AI assistance"},
+        {"name": "date", "type": "string", "required": false, "description": "YYYY-MM-DD, defaults to today"},
+        {"name": "time", "type": "string", "required": false, "description": "HH:MM, defaults to now"}
+      ]
+    },
+    {"method": "PUT", "path": "/entries/{id}", "description": "Update an existing entry"},
+    {"method": "GET", "path": "/entries", "description": "List entries with date, from/to, category params"},
+    {"method": "DELETE", "path": "/entries/{id}", "description": "Delete an entry"}
   ]
 }
 ```
@@ -125,7 +167,7 @@ Each POST syncs a `YYYY-MM-DD.md` file in `--dir`:
 ---
 ## Daily Summary
 - Entries: 1
-- Est. person-hours saved: 3h
+- Est. person-hours (without AI): 3h
 - Est. person-days: 0.4d (assuming 8h/day)
 ```
 
@@ -150,17 +192,19 @@ All agent sessions MUST log significant work to the shared worklog.
 ### How to log:
 
 ```bash
+hrs log -c dev -t "Short description" -b "outcome one;outcome two" -e 2
+```
+
+Or via HTTP if sandboxed:
+
+```bash
 curl -s -X POST http://localhost:9746/entries -d '{
   "category": "dev",
   "title": "Short description of work",
-  "bullets": ["What was accomplished", "Key outcomes or artifacts", "Files/systems touched"],
+  "bullets": ["What was accomplished", "Key outcomes"],
   "hours_est": 2
 }'
 ```
-
-### Fields:
-
-Discover fields dynamically: `curl -s http://localhost:9746/schema`
 
 ### Important:
 - **Log proactively** — don't wait to be asked
@@ -170,17 +214,18 @@ Discover fields dynamically: `curl -s http://localhost:9746/schema`
 
 ## A note on hours estimates
 
-The `hours_est` field asks the AI to estimate how long the work would take a competent developer without AI assistance. This is useful for understanding throughput, but take it with a grain of salt — AI agents tend to overstate the complexity of tasks they've completed. A "~4h" estimate for something that took 3 minutes of wall clock time is flattering but not always realistic. The daily summaries roll these up into "person-days saved" which makes for a nice story, just don't use it to plan your next sprint.
+The `hours_est` field asks the AI to estimate how long the work would take a competent developer without AI assistance. This is useful for understanding throughput, but take it with a grain of salt — AI agents tend to overstate the complexity of tasks they've completed. A "~4h" estimate for something that took 3 minutes of wall clock time is flattering but not always realistic. The daily summaries roll these up into person-hours and person-days which makes for a nice story, just don't use it to plan your next sprint.
 
 ## Design
 
 - Single static binary — server, CLI, TUI, and docs site all in one
+- Pure Go, no CGo — cross-compiles to macOS and Linux without a C toolchain
 - SQLite with WAL mode — handles concurrent agent writes
 - `net/http` stdlib server — one goroutine per request
 - BubbleTea TUI with vim keybindings
 - Embedded documentation site (`hrs docs` or `/docs/` on the server)
 - Markdown files are a rendered view, SQLite is the source of truth
-- ~1000 lines of Go (including ~180 lines of tests)
+- ~1500 lines of Go (plus ~300 lines of tests)
 
 ## License
 
