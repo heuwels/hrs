@@ -25,7 +25,7 @@ tar xzf hrs_*_darwin_arm64.tar.gz
 sudo mv hrs /usr/local/bin/
 ```
 
-Or via Go:
+Or via Go (requires `$(go env GOPATH)/bin` on your PATH):
 
 ```bash
 go install github.com/heuwels/hrs@latest

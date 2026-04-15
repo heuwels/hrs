@@ -26,6 +26,15 @@ available builds: `darwin_amd64`, `darwin_arm64`, `linux_amd64`, `linux_arm64`.
 go install github.com/heuwels/hrs@latest
 ```
 
+this puts the binary in `$(go env GOPATH)/bin`. if you get "command not
+found", add it to your PATH:
+
+```bash
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
+for most people, downloading the binary directly is simpler.
+
 ### build from source
 
 ```bash

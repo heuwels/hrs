@@ -37,6 +37,9 @@ sudo mv hrs /usr/local/bin/</code></pre>
 
     <h3>Go install</h3>
     <pre><code>go install github.com/heuwels/hrs@latest</code></pre>
+    <p>This puts the binary in <code>$(go env GOPATH)/bin</code>. If you get "command not found", add it to your PATH:</p>
+    <pre><code>export PATH="$PATH:$(go env GOPATH)/bin"</code></pre>
+    <p>For most people, downloading the binary directly is simpler.</p>
 
     <h3>Build from source</h3>
     <pre><code>git clone https://github.com/heuwels/hrs
