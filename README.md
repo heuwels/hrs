@@ -2,6 +2,8 @@
 
 Timesheets for your agent. A tiny HTTP server backed by SQLite that AI agents can POST work entries to from any directory.
 
+![hrs demo](https://hrs.dev/demo.gif)
+
 ```
 POST /entries → log work
 PUT  /entries → update work
