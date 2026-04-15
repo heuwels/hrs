@@ -21,14 +21,14 @@ create an entry.
 }
 ```
 
-| field      | type     | required | default |
-|------------|----------|----------|---------|
-| category   | string   | yes      |         |
-| title      | string   | yes      |         |
-| bullets    | []string | yes      |         |
-| hours_est  | number   | no       | 0       |
-| date       | string   | no       | today   |
-| time       | string   | no       | now     |
+| field      | type     | required | default | validation              |
+|------------|----------|----------|---------|-------------------------|
+| category   | string   | yes      |         | non-empty               |
+| title      | string   | yes      |         | non-empty               |
+| bullets    | []string | yes      |         | at least one non-empty  |
+| hours_est  | number   | no       | 0       | 0-24                    |
+| date       | string   | no       | today   | YYYY-MM-DD              |
+| time       | string   | no       | now     | HH:MM                   |
 
 returns `201`:
 
@@ -36,11 +36,39 @@ returns `201`:
 {"id": 42, "date": "2026-04-13"}
 ```
 
-## GET /entries?date=YYYY-MM-DD
+## PUT /entries/{id}
 
-list entries for a date. defaults to today.
+update an existing entry. accepts the same fields as POST.
 
-returns `200` with a json array of entries.
+```bash
+curl -X PUT http://localhost:9746/entries/42 -d '{
+  "category": "dev",
+  "title": "updated title",
+  "bullets": ["revised bullet"],
+  "hours_est": 4,
+  "date": "2026-04-13",
+  "time": "14:30"
+}'
+```
+
+returns `200` with the updated entry.
+
+## GET /entries
+
+list entries. supports three query modes:
+
+```bash
+# single date (default: today)
+GET /entries?date=2026-04-13
+
+# date range (inclusive)
+GET /entries?from=2026-04-01&to=2026-04-15
+
+# date range with category filter
+GET /entries?from=2026-04-01&to=2026-04-15&category=dev
+```
+
+returns `200` with a json array of entries. returns `[]` if no matches.
 
 ## DELETE /entries/{id}
 
@@ -59,10 +87,17 @@ self-discover the api without hardcoded instructions in their prompts.
 
 ```json
 {
-  "endpoint": "POST /entries",
-  "fields": [
-    {"name": "category", "type": "string", "required": true, "description": "..."},
-    ...
+  "endpoints": [
+    {
+      "method": "POST",
+      "path": "/entries",
+      "fields": [
+        {"name": "category", "type": "string", "required": true, "description": "..."}
+      ]
+    },
+    {"method": "PUT", "path": "/entries/{id}", "description": "..."},
+    {"method": "GET", "path": "/entries", "description": "..."},
+    {"method": "DELETE", "path": "/entries/{id}", "description": "..."}
   ]
 }
 ```
