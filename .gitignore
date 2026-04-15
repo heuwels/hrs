@@ -2,3 +2,5 @@ hrs
 *.db
 /*.md
 !README.md
+!CONTRIBUTING.md
+!SECURITY.md

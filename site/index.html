@@ -123,7 +123,15 @@ hrs tui
 <span class="comment"># Start the HTTP daemon (optional &mdash; CLI works without it)</span>
 hrs serve &amp;</code></pre>
 
-    <p>Zero config &mdash; data goes to <code>~/.hrs/hrs.db</code> automatically. See the <a href="/docs/">full docs</a> for agent integration, API reference, and all CLI commands.</p>
+    <h3>3. Tell your agent</h3>
+    <p>Add to your <code>CLAUDE.md</code>, <code>.cursorrules</code>, or equivalent:</p>
+    <pre><code>After completing significant work, log it:
+
+hrs log -c dev -t "Short description" -b "outcome one;outcome two" -e 2
+
+Log proactively. Don't wait to be asked.</code></pre>
+
+    <p>Zero config &mdash; data goes to <code>~/.hrs/hrs.db</code> automatically. See the <a href="/docs/">full docs</a> for <a href="/docs/agent-integration.html">agent integration</a>, <a href="/docs/api.html">API reference</a>, and all CLI commands.</p>
   </div>
 </section>
 
