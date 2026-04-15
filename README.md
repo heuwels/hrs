@@ -1,14 +1,8 @@
 # hrs
 
-Timesheets for your agent. A tiny HTTP server backed by SQLite that AI agents can POST work entries to from any directory.
+Timesheets for your agent. A CLI backed by SQLite that any AI agent can call to log structured work entries from any directory.
 
 ![hrs demo](https://hrs.dev/demo.gif)
-
-```
-POST /entries → log work
-PUT  /entries → update work
-GET  /entries → read back
-```
 
 ## Why
 
@@ -70,16 +64,6 @@ hrs version                                         # print version
 
 Bullets are separated by semicolons. The `--dir` flag controls where markdown files are rendered.
 
-### Multi-agent mode
-
-When you have multiple AI agents logging concurrently, run the server to serialise writes:
-
-```bash
-hrs serve &                          # start the API server (default: localhost:9746)
-```
-
-`hrs log` automatically detects the server and routes through it. If the server isn't running, it falls back to direct DB writes. No config needed either way.
-
 ### Environment variables
 
 | Variable | Default | Description |
@@ -87,7 +71,21 @@ hrs serve &                          # start the API server (default: localhost:
 | `HRS_DB` | `~/.hrs/hrs.db` | SQLite database path |
 | `HRS_DIR` | `~/.hrs/` | Markdown output directory |
 
-## API
+## HTTP server (optional)
+
+Most users only need the CLI. The HTTP server is useful when:
+
+- **Agents can't shell out** — browser extensions, sandboxed runtimes, or custom tool-use frameworks that only support HTTP
+- **Webhook integrations** — pipe events from CI, deployment tools, or monitoring into your worklog
+- **Remote logging** — log from a different machine on your network (bind to `0.0.0.0` instead of `127.0.0.1`)
+
+```bash
+hrs serve &                          # start on localhost:9746
+```
+
+The CLI auto-detects the server — if it's running, `hrs log` routes through it. If not, it writes directly to SQLite. No config needed either way.
+
+### API
 
 ### `POST /entries`
 

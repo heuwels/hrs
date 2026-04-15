@@ -49,7 +49,7 @@
     </p>
     <h2>The <span class="accent">fix</span></h2>
     <p class="pitch-intro">
-      <strong>hrs</strong> is a local daemon that gives every agent a single HTTP endpoint to push structured work entries to. You get markdown files on disk and a TUI to see what got done.
+      <strong>hrs</strong> is a CLI that any agent can call to log structured work entries. You get a SQLite database, markdown files on disk, and a TUI to see what got done.
     </p>
   </div>
 </section>
@@ -61,14 +61,14 @@
     <h2>How it <span class="accent">works</span></h2>
     <div class="features-grid">
       <div class="feature">
-        <div class="feature-icon">&#x1F4E1;</div>
-        <h3>HTTP + CLI</h3>
-        <p>Agents POST JSON to <code>localhost:9746/entries</code>. Humans use <code>hrs log</code>. Both work, same database.</p>
+        <div class="feature-icon">&#x1F4E6;</div>
+        <h3>Single binary</h3>
+        <p>Pure Go, no CGo. Download a <a href="https://github.com/heuwels/hrs/releases/latest">prebuilt binary</a> or <code>go install</code>. DB auto-creates at <code>~/.hrs/hrs.db</code>.</p>
       </div>
       <div class="feature">
-        <div class="feature-icon">&#x1F50D;</div>
-        <h3>Self-discovery</h3>
-        <p>Agents call <code>GET /schema</code> to learn the API. No hardcoded formats in your prompts.</p>
+        <div class="feature-icon">&#x2328;</div>
+        <h3>CLI-first</h3>
+        <p><code>hrs log</code> works from any directory. Tell your agent to call it and you're done. No daemon, no config.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#x1F4C4;</div>
@@ -81,14 +81,14 @@
         <p>Vim-style TUI to browse entries by day. Scroll with j/k, switch days with h/l, delete with d. All in your terminal.</p>
       </div>
       <div class="feature">
-        <div class="feature-icon">&#x26A1;</div>
-        <h3>Smart fallback</h3>
-        <p>The CLI tries the server first, then writes directly to SQLite. Works whether the daemon is running or not.</p>
+        <div class="feature-icon">&#x1F50D;</div>
+        <h3>Query and export</h3>
+        <p>Filter by date range and category. Export as JSON or CSV. Pipe <code>hrs ls --format json</code> into anything.</p>
       </div>
       <div class="feature">
-        <div class="feature-icon">&#x1F4E6;</div>
-        <h3>Single binary</h3>
-        <p>Pure Go, no CGo. Download a <a href="https://github.com/heuwels/hrs/releases/latest">prebuilt binary</a> or <code>go install</code>. DB auto-creates at <code>~/.hrs/hrs.db</code>.</p>
+        <div class="feature-icon">&#x1F4E1;</div>
+        <h3>Optional HTTP server</h3>
+        <p>Run <code>hrs serve</code> for agents that can't shell out, browser extensions, or webhook integrations. The CLI auto-detects it.</p>
       </div>
     </div>
   </div>
@@ -118,10 +118,7 @@ hrs log -c dev -t "built auth flow" -b "oauth2 pkce;token refresh;tests" -e 3
 hrs ls
 
 <span class="comment"># Browse interactively</span>
-hrs tui
-
-<span class="comment"># Start the HTTP daemon (optional &mdash; CLI works without it)</span>
-hrs serve &amp;</code></pre>
+hrs tui</code></pre>
 
     <h3>3. Tell your agent</h3>
     <p>Add to your <code>CLAUDE.md</code>, <code>.cursorrules</code>, or equivalent:</p>
