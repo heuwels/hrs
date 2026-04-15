@@ -21,7 +21,7 @@ the simplest option. no daemon needed — the cli writes directly to
 the database.
 
 ```bash
-hrs log -c dev -t "built auth flow" -b "oauth2 pkce,token refresh,tests" -e 3
+hrs log -c dev -t "built auth flow" -b "oauth2 pkce;token refresh;tests" -e 3
 ```
 
 this works if your agent is allowed to run arbitrary commands.
@@ -74,7 +74,7 @@ add to your `CLAUDE.md`:
 after completing significant work, log it:
 
 ```bash
-hrs log -c dev -t "Short description" -b "outcome one,outcome two" -e 2
+hrs log -c dev -t "Short description" -b "outcome one;outcome two" -e 2
 ```
 
 log proactively. don't wait to be asked.
