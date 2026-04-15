@@ -6,9 +6,20 @@
 
 ## the problem
 
-ai coding agents are sandboxed to their working directory. they can't
-write to a shared worklog at `~/worklogs/2026-04-13.md` if they're
-running in `~/projects/my-app/`.
+hrs started as a markdown file archive with a tui wrapper. three things
+broke that approach:
+
+1. **blind writes** — claude would attempt to write directly to the
+   markdown file, fail, and waste an entire tool-use cycle retrying.
+2. **file locking** — multiple agents running concurrently would clobber
+   each other's writes to the same file.
+3. **sandboxing** — once we added guardrails (like
+   [toolgate](https://github.com/brycehans/toolgate)) that prevent
+   writes outside the active project directory, agents couldn't reach a
+   shared worklog at all.
+
+the fix: a cli and http api backed by sqlite, so agents can log work
+from anywhere without touching files directly.
 
 ## two ways to log
 

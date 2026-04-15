@@ -28,7 +28,13 @@
   <div class="container">
 
     <h2>The problem</h2>
-    <p>AI coding agents are sandboxed to their working directory. They can't write to a shared worklog at <code>~/worklogs/2026-04-13.md</code> if they're running in <code>~/projects/my-app/</code>.</p>
+    <p>hrs started as a markdown file archive with a TUI wrapper. Three things broke that approach:</p>
+    <ol>
+      <li><strong>Blind writes</strong> &mdash; Claude would attempt to write directly to the markdown file, fail, and waste an entire tool-use cycle retrying.</li>
+      <li><strong>File locking</strong> &mdash; multiple agents running concurrently would clobber each other's writes to the same file.</li>
+      <li><strong>Sandboxing</strong> &mdash; once we added guardrails (like <a href="https://github.com/brycehans/toolgate" target="_blank" rel="noopener noreferrer">toolgate</a>) that prevent writes outside the active project directory, agents couldn't reach a shared worklog at all.</li>
+    </ol>
+    <p>The fix: a CLI and HTTP API backed by SQLite, so agents can log work from anywhere without touching files directly.</p>
 
     <h2>Two ways to log</h2>
     <p>Agents can use either the <strong>CLI</strong> or the <strong>HTTP daemon</strong> &mdash; both write to the same SQLite database and produce the same markdown output.</p>
