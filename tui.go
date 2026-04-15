@@ -38,6 +38,11 @@ func newTUIModel(db *sql.DB, date string) tuiModel {
 	m := tuiModel{db: db, date: date}
 	m.loadDates()
 	m.loadEntries()
+	// If requested date has no entries and we have other dates, jump to most recent
+	if len(m.entries) == 0 && len(m.dates) > 0 {
+		m.date = m.dates[0]
+		m.loadEntries()
+	}
 	return m
 }
 
@@ -95,14 +100,20 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.scrollToCursor()
 			}
 		case "h", "left":
-			// Older (dates are descending)
-			if i := m.dateIndex(); i >= 0 && i < len(m.dates)-1 {
+			i := m.dateIndex()
+			if i < 0 && len(m.dates) > 0 {
+				m.date = m.dates[0]
+				m.loadEntries()
+			} else if i >= 0 && i < len(m.dates)-1 {
 				m.date = m.dates[i+1]
 				m.loadEntries()
 			}
 		case "l", "right":
-			// Newer
-			if i := m.dateIndex(); i > 0 {
+			i := m.dateIndex()
+			if i < 0 && len(m.dates) > 0 {
+				m.date = m.dates[0]
+				m.loadEntries()
+			} else if i > 0 {
 				m.date = m.dates[i-1]
 				m.loadEntries()
 			}
