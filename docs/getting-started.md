@@ -43,7 +43,7 @@ cd hrs
 go build -o hrs .
 ```
 
-no cgo — a plain `go build` works on any platform with no C compiler.
+no cgo, a plain `go build` works on any platform with no C compiler.
 
 ---
 
@@ -160,7 +160,7 @@ installed automatically via homebrew. for manual setup:
 # bash
 source <(cat completions/hrs.bash)
 
-# zsh — add to fpath
+# zsh, add to fpath
 cp completions/hrs.zsh ~/.zsh/completions/_hrs
 
 # fish

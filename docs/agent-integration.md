@@ -9,11 +9,11 @@
 hrs started as a markdown file archive with a tui wrapper. three things
 broke that approach:
 
-1. **blind writes** — claude would attempt to write directly to the
+1. **blind writes**: claude would attempt to write directly to the
    markdown file, fail, and waste an entire tool-use cycle retrying.
-2. **file locking** — multiple agents running concurrently would clobber
+2. **file locking**: multiple agents running concurrently would clobber
    each other's writes to the same file.
-3. **sandboxing** — once we added guardrails (like
+3. **sandboxing**: once we added guardrails (like
    [toolgate](https://github.com/brycehans/toolgate)) that prevent
    writes outside the active project directory, agents couldn't reach a
    shared worklog at all.
@@ -23,12 +23,12 @@ from anywhere without touching files directly.
 
 ## two ways to log
 
-agents can use either the **CLI** or the **HTTP daemon** — both write
+agents can use either the **CLI** or the **HTTP daemon**. both write
 to the same sqlite database and produce the same markdown output.
 
 ### option a: CLI (`hrs log`)
 
-the simplest option. no daemon needed — the cli writes directly to
+the simplest option. no daemon needed, the cli writes directly to
 the database.
 
 ```bash
@@ -44,7 +44,7 @@ directory, run the daemon and have agents POST via http instead.
 
 this is useful when you use tools like
 [toolgate](https://github.com/brycehans/toolgate) to restrict file
-writes to the project root — the agent can still log work via http
+writes to the project root. the agent can still log work via http
 without needing write access to the hrs database.
 
 ```bash
@@ -71,9 +71,9 @@ agents can self-discover fields via `GET /schema`.
 | works without daemon | yes | no |
 | output | same | same |
 
-the cli itself is smart — it tries the http server first, then falls
-back to a direct database write. so if the daemon is running, `hrs log`
-uses it automatically.
+the cli is smart: it tries the http server first, then falls back to a
+direct database write. so if the daemon is running, `hrs log` uses it
+automatically.
 
 ## example: claude code
 
@@ -115,7 +115,7 @@ log proactively. don't wait to be asked.
 
 ## example: cursor / other agents
 
-same pattern — any agent that can shell out can log:
+same pattern. any agent that can shell out can log:
 
 ```bash
 # cli
@@ -129,10 +129,10 @@ curl -s -X POST http://localhost:9746/entries \
 
 ## tips
 
-- **log during work, not after** — agents forget context fast
-- **be generous with hours_est** — but read the [caveat](/tui#hours-caveat)
-- **category matters** — helps filter in the tui later
-- **bullets should be outcomes** — "deployed X" not "worked on X"
+- **log during work, not after**: agents forget context fast
+- **be generous with hours_est**: but read the [caveat](/tui#hours-caveat)
+- **category matters**: helps filter in the tui later
+- **bullets should be outcomes**: "deployed X" not "worked on X"
 
 ---
 

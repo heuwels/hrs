@@ -32,7 +32,7 @@ understanding throughput, but take it with a grain of salt.
 ai agents tend to overstate the complexity of tasks they've completed.
 a "~4h" estimate for something that took 3 minutes of wall clock time
 is flattering but not always realistic. the daily summaries roll these
-up into person-hours and person-days which makes for a nice story — just
+up into person-hours and person-days which makes for a nice story, just
 don't use it to plan your next sprint.
 
 ---
