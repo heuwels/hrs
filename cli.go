@@ -9,11 +9,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-isatty"
 )
 
 func logViaServer(port int, e *Entry) (string, error) {
@@ -51,6 +55,7 @@ func cmdServe(args []string) error {
 	mux.HandleFunc("GET /health", s.Health)
 	mux.HandleFunc("GET /entries", s.ListEntries)
 	mux.HandleFunc("POST /entries", s.CreateEntry)
+	mux.HandleFunc("PUT /entries/{id}", s.UpdateEntryHandler)
 	mux.HandleFunc("DELETE /entries/{id}", s.DeleteEntry)
 	mux.HandleFunc("GET /docs/", http.StripPrefix("/docs", http.HandlerFunc(docsHandler)).ServeHTTP)
 	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {
@@ -81,24 +86,24 @@ func cmdLog(args []string) error {
 	port := fs.Int("port", 9746, "server port to try before direct DB write")
 	category := fs.String("c", "", "category (e.g. dev, admin, security)")
 	title := fs.String("t", "", "title")
-	bullets := fs.String("b", "", "bullets (comma-separated)")
+	bullets := fs.String("b", "", "bullets (semicolon-separated)")
 	hours := fs.Float64("e", 0, "estimated person-hours")
 	date := fs.String("d", "", "date (YYYY-MM-DD, default: today)")
-	time := fs.String("T", "", "time (HH:MM, default: now)")
+	timeFlag := fs.String("T", "", "time (HH:MM, default: now)")
 	fs.Parse(args)
 
 	if *category == "" || *title == "" || *bullets == "" {
 		return fmt.Errorf("required: -c category -t title -b bullets")
 	}
 
-	parts := strings.Split(*bullets, ",")
+	parts := strings.Split(*bullets, ";")
 	for i := range parts {
 		parts[i] = strings.TrimSpace(parts[i])
 	}
 
 	e := &Entry{
 		Date:     *date,
-		Time:     *time,
+		Time:     *timeFlag,
 		Category: *category,
 		Title:    *title,
 		Bullets:  parts,
@@ -112,6 +117,7 @@ func cmdLog(args []string) error {
 	}
 
 	// Fall back to direct DB write
+	os.MkdirAll(*logDir, 0755)
 	db, err := OpenDB(*dbPath)
 	if err != nil {
 		return err
@@ -126,7 +132,7 @@ func cmdLog(args []string) error {
 	// Sync markdown
 	entries, _ := GetEntries(db, e.Date)
 	if md := RenderMarkdown(entries); md != "" {
-		os.WriteFile(fmt.Sprintf("%s/%s.md", *logDir, e.Date), []byte(md), 0644)
+		os.WriteFile(filepath.Join(*logDir, e.Date+".md"), []byte(md), 0644)
 	}
 
 	out, _ := json.Marshal(map[string]any{"id": id, "date": e.Date})
@@ -137,6 +143,10 @@ func cmdLog(args []string) error {
 func cmdLs(args []string) error {
 	fs := flag.NewFlagSet("hrs ls", flag.ExitOnError)
 	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	format := fs.String("format", "md", "output format (md|json)")
+	from := fs.String("from", "", "start date (YYYY-MM-DD)")
+	to := fs.String("to", "", "end date (YYYY-MM-DD)")
+	category := fs.String("category", "", "filter by category")
 	fs.Parse(args)
 
 	date := now().Format("2006-01-02")
@@ -150,9 +160,26 @@ func cmdLs(args []string) error {
 	}
 	defer db.Close()
 
-	entries, err := GetEntries(db, date)
+	var entries []Entry
+	if *from != "" {
+		if *to == "" {
+			*to = now().Format("2006-01-02")
+		}
+		entries, err = GetEntriesRange(db, *from, *to, *category)
+	} else {
+		entries, err = GetEntries(db, date)
+	}
 	if err != nil {
 		return err
+	}
+
+	if *format == "json" {
+		if entries == nil {
+			entries = []Entry{}
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(entries)
 	}
 
 	if len(entries) == 0 {
@@ -160,8 +187,39 @@ func cmdLs(args []string) error {
 		return nil
 	}
 
-	fmt.Print(RenderMarkdown(entries))
+	// Color output when stdout is a TTY
+	if isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd()) {
+		renderColorLs(entries)
+	} else {
+		fmt.Print(RenderMarkdown(entries))
+	}
 	return nil
+}
+
+func renderColorLs(entries []Entry) {
+	hdrStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+	catSt := lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
+	titleSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+	hoursSt := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	bulletSt := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	sumSt := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+
+	fmt.Println(hdrStyle.Render(fmt.Sprintf("# Worklog — %s", entries[0].Date)))
+	fmt.Println()
+	var total float64
+	for _, e := range entries {
+		total += e.HoursEst
+		hours := ""
+		if e.HoursEst > 0 {
+			hours = hoursSt.Render(fmt.Sprintf(" (~%gh)", e.HoursEst))
+		}
+		fmt.Printf("%s %s%s\n", catSt.Render(fmt.Sprintf("[%s]", e.Category)), titleSt.Render(e.Title), hours)
+		for _, bullet := range e.Bullets {
+			fmt.Printf("  %s\n", bulletSt.Render("- "+bullet))
+		}
+		fmt.Println()
+	}
+	fmt.Println(sumSt.Render(fmt.Sprintf("%d entries  ~%gh  %.1fd", len(entries), total, total/8)))
 }
 
 func cmdTUI(args []string) error {
@@ -225,5 +283,166 @@ func cmdMigrate(args []string) error {
 		return err
 	}
 	fmt.Printf("imported %d entries\n", n)
+	return nil
+}
+
+func cmdRm(args []string) error {
+	fs := flag.NewFlagSet("hrs rm", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	fs.Parse(args)
+
+	if fs.NArg() < 1 {
+		return fmt.Errorf("usage: hrs rm <id>")
+	}
+	id, err := strconv.ParseInt(fs.Arg(0), 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid id: %s", fs.Arg(0))
+	}
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = DeleteEntryByID(db, id)
+	if err != nil {
+		return err
+	}
+
+	out, _ := json.Marshal(map[string]any{"deleted": id})
+	fmt.Println(string(out))
+	return nil
+}
+
+func cmdEdit(args []string) error {
+	fs := flag.NewFlagSet("hrs edit", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	category := fs.String("c", "", "category")
+	title := fs.String("t", "", "title")
+	bullets := fs.String("b", "", "bullets (semicolon-separated)")
+	hours := fs.Float64("e", -1, "estimated person-hours")
+	date := fs.String("d", "", "date (YYYY-MM-DD)")
+	timeFlag := fs.String("T", "", "time (HH:MM)")
+	fs.Parse(args)
+
+	if fs.NArg() < 1 {
+		return fmt.Errorf("usage: hrs edit <id> [flags]")
+	}
+	id, err := strconv.ParseInt(fs.Arg(0), 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid id: %s", fs.Arg(0))
+	}
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	e, err := GetEntryByID(db, id)
+	if err != nil {
+		return fmt.Errorf("entry %d not found", id)
+	}
+
+	// Merge provided flags over existing values
+	if *category != "" {
+		e.Category = *category
+	}
+	if *title != "" {
+		e.Title = *title
+	}
+	if *bullets != "" {
+		parts := strings.Split(*bullets, ";")
+		for i := range parts {
+			parts[i] = strings.TrimSpace(parts[i])
+		}
+		e.Bullets = parts
+	}
+	if *hours >= 0 {
+		e.HoursEst = *hours
+	}
+	if *date != "" {
+		e.Date = *date
+	}
+	if *timeFlag != "" {
+		e.Time = *timeFlag
+	}
+
+	if err := UpdateEntry(db, id, e); err != nil {
+		return err
+	}
+
+	out, _ := json.Marshal(e)
+	fmt.Println(string(out))
+	return nil
+}
+
+func cmdExport(args []string) error {
+	fs := flag.NewFlagSet("hrs export", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	from := fs.String("from", "", "start date (YYYY-MM-DD)")
+	to := fs.String("to", "", "end date (YYYY-MM-DD)")
+	category := fs.String("category", "", "filter by category")
+	format := fs.String("format", "json", "output format (json|csv)")
+	fs.Parse(args)
+
+	if *from == "" {
+		*from = "2000-01-01"
+	}
+	if *to == "" {
+		*to = "2099-12-31"
+	}
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	entries, err := GetEntriesRange(db, *from, *to, *category)
+	if err != nil {
+		return err
+	}
+	if entries == nil {
+		entries = []Entry{}
+	}
+
+	switch *format {
+	case "csv":
+		fmt.Println("id,date,time,category,title,bullets,hours_est")
+		for _, e := range entries {
+			bulletStr := strings.Join(e.Bullets, ";")
+			// Quote fields that might contain commas
+			fmt.Printf("%d,%s,%s,%s,%q,%q,%g\n",
+				e.ID, e.Date, e.Time, e.Category,
+				e.Title, bulletStr, e.HoursEst)
+		}
+	default:
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(entries)
+	}
+	return nil
+}
+
+func cmdCategories(args []string) error {
+	fs := flag.NewFlagSet("hrs categories", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	fs.Parse(args)
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	cats, err := GetCategories(db)
+	if err != nil {
+		return err
+	}
+	for _, c := range cats {
+		fmt.Println(c)
+	}
 	return nil
 }

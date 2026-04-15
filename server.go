@@ -15,14 +15,34 @@ type Server struct {
 }
 
 var schema = map[string]any{
-	"endpoint": "POST /entries",
-	"fields": []map[string]any{
-		{"name": "category", "type": "string", "required": true, "description": "Work category, e.g. dev, security, admin, docs, infra"},
-		{"name": "title", "type": "string", "required": true, "description": "Concise label for the work performed"},
-		{"name": "bullets", "type": "[]string", "required": true, "description": "Terse, outcome-focused bullet points"},
-		{"name": "hours_est", "type": "number", "required": false, "description": "Estimated person-hours this would take without AI assistance", "default": 0},
-		{"name": "date", "type": "string", "required": false, "description": "YYYY-MM-DD, defaults to today"},
-		{"name": "time", "type": "string", "required": false, "description": "HH:MM, defaults to now"},
+	"endpoints": []map[string]any{
+		{
+			"method": "POST",
+			"path":   "/entries",
+			"fields": []map[string]any{
+				{"name": "category", "type": "string", "required": true, "description": "Work category, e.g. dev, security, admin, docs, infra"},
+				{"name": "title", "type": "string", "required": true, "description": "Concise label for the work performed"},
+				{"name": "bullets", "type": "[]string", "required": true, "description": "Terse, outcome-focused bullet points"},
+				{"name": "hours_est", "type": "number", "required": false, "description": "Estimated person-hours this would take without AI assistance", "default": 0},
+				{"name": "date", "type": "string", "required": false, "description": "YYYY-MM-DD, defaults to today"},
+				{"name": "time", "type": "string", "required": false, "description": "HH:MM, defaults to now"},
+			},
+		},
+		{
+			"method":      "PUT",
+			"path":        "/entries/{id}",
+			"description": "Update an existing entry by ID. All fields from POST /entries apply.",
+		},
+		{
+			"method":      "GET",
+			"path":        "/entries",
+			"description": "List entries. Query params: date (single day), from/to (range, inclusive), category (filter).",
+		},
+		{
+			"method":      "DELETE",
+			"path":        "/entries/{id}",
+			"description": "Delete an entry by ID.",
+		},
 	},
 }
 
@@ -35,11 +55,27 @@ func (s *Server) Health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request) {
-	date := r.URL.Query().Get("date")
-	if date == "" {
-		date = now().Format("2006-01-02")
+	q := r.URL.Query()
+	from := q.Get("from")
+	to := q.Get("to")
+	category := q.Get("category")
+
+	var entries []Entry
+	var err error
+
+	if from != "" {
+		if to == "" {
+			to = now().Format("2006-01-02")
+		}
+		entries, err = GetEntriesRange(s.db, from, to, category)
+	} else {
+		date := q.Get("date")
+		if date == "" {
+			date = now().Format("2006-01-02")
+		}
+		entries, err = GetEntries(s.db, date)
 	}
-	entries, err := GetEntries(s.db, date)
+
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -75,6 +111,26 @@ func (s *Server) CreateEntry(w http.ResponseWriter, r *http.Request) {
 	}
 	s.syncMarkdown(e.Date)
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "date": e.Date})
+}
+
+func (s *Server) UpdateEntryHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var e Entry
+	if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
+		return
+	}
+	if err := UpdateEntry(s.db, id, &e); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	e.ID = id
+	s.syncMarkdown(e.Date)
+	writeJSON(w, http.StatusOK, e)
 }
 
 func (s *Server) DeleteEntry(w http.ResponseWriter, r *http.Request) {

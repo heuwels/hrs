@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS LaunchAgent for hrs serve
+
+  Install:
+    cp contrib/hrs.plist ~/Library/LaunchAgents/com.heuwels.hrs.plist
+
+  Load (start now + on login):
+    launchctl load ~/Library/LaunchAgents/com.heuwels.hrs.plist
+
+  Unload (stop + remove from login):
+    launchctl unload ~/Library/LaunchAgents/com.heuwels.hrs.plist
+
+  Check status:
+    launchctl list | grep hrs
+
+  View logs:
+    tail -f /tmp/hrs.log
+    tail -f /tmp/hrs.err
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.heuwels.hrs</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/hrs</string>
+        <string>serve</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/hrs.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/hrs.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

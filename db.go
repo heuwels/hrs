@@ -4,9 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/ncruces/go-sqlite3/driver"
+	_ "github.com/ncruces/go-sqlite3/embed"
 )
 
 type Entry struct {
@@ -19,8 +21,42 @@ type Entry struct {
 	HoursEst float64  `json:"hours_est"`
 }
 
+var (
+	dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	timeRe = regexp.MustCompile(`^\d{2}:\d{2}$`)
+)
+
+func validateEntry(e *Entry) error {
+	if e.Date != "" && !dateRe.MatchString(e.Date) {
+		return fmt.Errorf("invalid date format: %q (expected YYYY-MM-DD)", e.Date)
+	}
+	if e.Time != "" && !timeRe.MatchString(e.Time) {
+		return fmt.Errorf("invalid time format: %q (expected HH:MM)", e.Time)
+	}
+	if e.HoursEst < 0 || e.HoursEst > 24 {
+		return fmt.Errorf("hours_est must be between 0 and 24, got %g", e.HoursEst)
+	}
+	if strings.TrimSpace(e.Category) == "" {
+		return fmt.Errorf("category must be non-empty")
+	}
+	if strings.TrimSpace(e.Title) == "" {
+		return fmt.Errorf("title must be non-empty")
+	}
+	hasNonEmpty := false
+	for _, b := range e.Bullets {
+		if strings.TrimSpace(b) != "" {
+			hasNonEmpty = true
+			break
+		}
+	}
+	if !hasNonEmpty {
+		return fmt.Errorf("bullets must have at least one non-empty string")
+	}
+	return nil
+}
+
 func OpenDB(path string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sql.Open("sqlite3", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, err
 	}
@@ -49,6 +85,9 @@ func InsertEntry(db *sql.DB, e *Entry) (int64, error) {
 	if e.Time == "" {
 		e.Time = now().Format("15:04")
 	}
+	if err := validateEntry(e); err != nil {
+		return 0, err
+	}
 	b, _ := json.Marshal(e.Bullets)
 	res, err := db.Exec(
 		`INSERT INTO entries (date, time, category, title, bullets, hours_est) VALUES (?,?,?,?,?,?)`,
@@ -58,6 +97,18 @@ func InsertEntry(db *sql.DB, e *Entry) (int64, error) {
 		return 0, err
 	}
 	return res.LastInsertId()
+}
+
+func UpdateEntry(db *sql.DB, id int64, e *Entry) error {
+	if err := validateEntry(e); err != nil {
+		return err
+	}
+	b, _ := json.Marshal(e.Bullets)
+	_, err := db.Exec(
+		`UPDATE entries SET date=?, time=?, category=?, title=?, bullets=?, hours_est=? WHERE id=?`,
+		e.Date, e.Time, e.Category, e.Title, string(b), e.HoursEst, id,
+	)
+	return err
 }
 
 func GetEntries(db *sql.DB, date string) ([]Entry, error) {
@@ -78,6 +129,67 @@ func GetEntries(db *sql.DB, date string) ([]Entry, error) {
 		}
 		json.Unmarshal([]byte(raw), &e.Bullets)
 		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func GetEntriesRange(db *sql.DB, from, to, category string) ([]Entry, error) {
+	var rows *sql.Rows
+	var err error
+	if category != "" {
+		rows, err = db.Query(
+			`SELECT id, date, time, category, title, bullets, hours_est FROM entries WHERE date>=? AND date<=? AND category=? ORDER BY date, time, id`,
+			from, to, category,
+		)
+	} else {
+		rows, err = db.Query(
+			`SELECT id, date, time, category, title, bullets, hours_est FROM entries WHERE date>=? AND date<=? ORDER BY date, time, id`,
+			from, to,
+		)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Entry
+	for rows.Next() {
+		var e Entry
+		var raw string
+		if err := rows.Scan(&e.ID, &e.Date, &e.Time, &e.Category, &e.Title, &raw, &e.HoursEst); err != nil {
+			return nil, err
+		}
+		json.Unmarshal([]byte(raw), &e.Bullets)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func GetEntryByID(db *sql.DB, id int64) (*Entry, error) {
+	var e Entry
+	var raw string
+	err := db.QueryRow(
+		`SELECT id, date, time, category, title, bullets, hours_est FROM entries WHERE id=?`, id,
+	).Scan(&e.ID, &e.Date, &e.Time, &e.Category, &e.Title, &raw, &e.HoursEst)
+	if err != nil {
+		return nil, err
+	}
+	json.Unmarshal([]byte(raw), &e.Bullets)
+	return &e, nil
+}
+
+func GetCategories(db *sql.DB) ([]string, error) {
+	rows, err := db.Query(`SELECT DISTINCT category FROM entries ORDER BY category`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
 	}
 	return out, rows.Err()
 }
@@ -112,7 +224,7 @@ func RenderMarkdown(entries []Entry) string {
 	}
 	fmt.Fprintf(&b, "---\n## Daily Summary\n")
 	fmt.Fprintf(&b, "- Entries: %d\n", len(entries))
-	fmt.Fprintf(&b, "- Est. person-hours saved: %gh\n", total)
+	fmt.Fprintf(&b, "- Est. person-hours (without AI): %gh\n", total)
 	fmt.Fprintf(&b, "- Est. person-days: %.1fd (assuming 8h/day)\n", total/8)
 	return b.String()
 }
