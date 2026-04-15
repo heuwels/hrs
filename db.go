@@ -56,7 +56,7 @@ func validateEntry(e *Entry) error {
 }
 
 func OpenDB(path string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+	db, err := sql.Open("sqlite3", "file:"+path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, err
 	}
