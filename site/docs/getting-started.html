@@ -28,38 +28,84 @@
   <div class="container">
 
     <h2>Install</h2>
+
+    <h3>Download a binary</h3>
+    <p>Grab the latest release for your platform from <a href="https://github.com/heuwels/hrs/releases/latest" target="_blank" rel="noopener noreferrer">GitHub Releases</a>.</p>
+    <pre><code># example: macOS arm64
+curl -L https://github.com/heuwels/hrs/releases/latest/download/hrs_darwin_arm64.tar.gz | tar xz
+sudo mv hrs /usr/local/bin/</code></pre>
+    <p>Available builds: <code>darwin_amd64</code>, <code>darwin_arm64</code>, <code>linux_amd64</code>, <code>linux_arm64</code>.</p>
+
+    <h3>Go install</h3>
     <pre><code>go install github.com/heuwels/hrs@latest</code></pre>
-    <p>Or build from source:</p>
+
+    <h3>Build from source</h3>
     <pre><code>git clone https://github.com/heuwels/hrs
 cd hrs
 go build -o hrs .</code></pre>
+    <p>No CGo &mdash; a plain <code>go build</code> works on any platform with no C compiler.</p>
 
-    <h2>Start the server</h2>
-    <pre><code>hrs serve --db ~/hrs.db --dir ~/worklogs/</code></pre>
-    <p><code>--dir</code> is where markdown files get rendered. Point it at a directory your editor or TUI watches.</p>
+    <h2>Configuration</h2>
+    <p>hrs stores data in <code>~/.hrs/hrs.db</code> by default. Override with environment variables:</p>
+    <table>
+      <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>HRS_DB</code></td><td><code>~/.hrs/hrs.db</code></td><td>SQLite database path</td></tr>
+      <tr><td><code>HRS_DIR</code></td><td><code>~/.hrs/</code></td><td>Markdown output directory</td></tr>
+    </table>
+    <p>Or pass <code>--db</code> / <code>--dir</code> flags to any command.</p>
 
-    <h2>Log something</h2>
-    <pre><code># via CLI
-hrs log -c dev -t "first entry" -b "hello world" -e 0.1
+    <h2>Quick start</h2>
 
-# via curl
-curl -X POST http://localhost:9746/entries -d '{
-  "category": "dev",
-  "title": "first entry",
-  "bullets": ["hello world"],
-  "hours_est": 0.1
-}'</code></pre>
+    <h3>Log an entry</h3>
+    <pre><code>hrs log -c dev -t "built auth flow" -b "oauth2 pkce;token refresh;tests" -e 3</code></pre>
+    <p>Bullets are separated by semicolons. <code>-e</code> is your estimate of how long this would take a competent developer without AI assistance.</p>
 
-    <h2>View your logs</h2>
-    <pre><code># print today's log
-hrs ls
+    <h3>View today's log</h3>
+    <pre><code>hrs ls</code></pre>
+    <p>Color output in the terminal, markdown when piped. Add <code>--format json</code> for structured output.</p>
 
-# launch the TUI
-hrs tui</code></pre>
+    <h3>Browse with the TUI</h3>
+    <pre><code>hrs tui</code></pre>
 
-    <h2>Migrate existing markdown</h2>
-    <p>If you have existing <code>YYYY-MM-DD.md</code> worklog files:</p>
-    <pre><code>hrs migrate --dir ~/worklogs/</code></pre>
+    <h2>CLI reference</h2>
+    <table>
+      <tr><th>Command</th><th>Description</th></tr>
+      <tr><td><code>hrs serve</code></td><td>Start the HTTP API server</td></tr>
+      <tr><td><code>hrs log -c -t -b -e</code></td><td>Log an entry</td></tr>
+      <tr><td><code>hrs ls [date]</code></td><td>List entries (today if omitted)</td></tr>
+      <tr><td><code>hrs ls --from --to</code></td><td>List a date range</td></tr>
+      <tr><td><code>hrs tui [date]</code></td><td>Interactive terminal explorer</td></tr>
+      <tr><td><code>hrs edit &lt;id&gt; [flags]</code></td><td>Update an entry</td></tr>
+      <tr><td><code>hrs rm &lt;id&gt;</code></td><td>Delete an entry</td></tr>
+      <tr><td><code>hrs export</code></td><td>Export entries as JSON or CSV</td></tr>
+      <tr><td><code>hrs categories</code></td><td>List all categories</td></tr>
+      <tr><td><code>hrs migrate</code></td><td>Import existing markdown worklogs</td></tr>
+      <tr><td><code>hrs version</code></td><td>Print version</td></tr>
+    </table>
+
+    <h3>Examples</h3>
+    <pre><code># list entries
+hrs ls                                    # today
+hrs ls 2026-04-14                         # specific date
+hrs ls --format json                      # JSON output
+hrs ls --from 2026-04-01 --to 2026-04-15  # date range
+hrs ls --from 2026-04-01 --category dev   # filter by category
+
+# edit an entry
+hrs edit 42 -t "new title"                # update title
+hrs edit 42 -e 2 -c admin                # update hours and category
+
+# export
+hrs export --format csv --from 2026-04-01 --to 2026-04-30</code></pre>
+
+    <h2>Run as a service</h2>
+    <h3>macOS (launchd)</h3>
+    <pre><code>cp contrib/hrs.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/hrs.plist</code></pre>
+
+    <h3>Linux (systemd)</h3>
+    <pre><code>cp contrib/hrs.service ~/.config/systemd/user/
+systemctl --user enable --now hrs</code></pre>
 
     <div class="doc-nav">
       <a href="/docs/">&larr; Docs</a>

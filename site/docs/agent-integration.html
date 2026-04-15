@@ -35,7 +35,7 @@
 
     <h3>Option A: CLI (<code>hrs log</code>)</h3>
     <p>The simplest option. No daemon needed &mdash; the CLI writes directly to the database.</p>
-    <pre><code>hrs log -c dev -t "built auth flow" -b "oauth2 pkce,token refresh,tests" -e 3</code></pre>
+    <pre><code>hrs log -c dev -t "built auth flow" -b "oauth2 pkce;token refresh;tests" -e 3</code></pre>
     <p>This works if your agent is allowed to run arbitrary commands.</p>
 
     <h3>Option B: HTTP daemon (<code>hrs serve</code>)</h3>
@@ -70,7 +70,7 @@ curl -s -X POST http://localhost:9746/entries -d '{
 After completing significant work, log it:
 
 ```bash
-hrs log -c dev -t "Short description" -b "outcome one,outcome two" -e 2
+hrs log -c dev -t "Short description" -b "outcome one;outcome two" -e 2
 ```
 
 Log proactively. Don't wait to be asked.</code></pre>

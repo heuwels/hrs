@@ -40,12 +40,12 @@
         <div class="terminal-bar"><span></span><span></span><span></span></div>
         <div class="terminal-body"><span class="t-prompt">~</span> <span class="t-cmd">hrs ls</span>
 
- <span class="t-h1">hrs</span>  <span style="color:#d29922;font-weight:700">2026-04-14</span> (today)
+ <span class="t-h1">hrs</span>  <span style="color:#d29922;font-weight:700">2026-04-15</span> (today)
 
-<span class="t-sel">&gt; </span><span class="t-sel">[dev]</span> <span class="t-title">hrs v1.0.0 released</span> <span class="t-hours">(~6h)</span>
-    <span class="t-bullet">- Built Go timesheet server for AI agents</span>
-    <span class="t-bullet">- CLI subcommands: serve/log/ls/tui/migrate/docs</span>
-    <span class="t-bullet">- Smart log: server-first with direct DB fallback</span>
+<span class="t-sel">&gt; </span><span class="t-sel">[dev]</span> <span class="t-title">hrs v1.2.0 released</span> <span class="t-hours">(~6h)</span>
+    <span class="t-bullet">- Pure Go SQLite, cross-platform builds</span>
+    <span class="t-bullet">- New commands: edit, rm, export, categories</span>
+    <span class="t-bullet">- Input validation and date range queries</span>
 
   <span class="t-cat">[security]</span> <span class="t-title">Audit CloudFront signed URLs</span> <span class="t-hours">(~2h)</span>
     <span class="t-bullet">- Reviewed token expiry and key rotation</span>
@@ -57,7 +57,7 @@
   <span class="t-dim">  &#x25BC; 4 more below</span>
 
   <span class="t-summary">  10 entries  ~18.5h  2.3d</span>
-  <span class="t-dim">  j/k scroll  h/l day  g/G top/bottom  t today  q quit</span></div>
+  <span class="t-dim">  j/k scroll  h/l day  d delete  e edit  g/G top/bottom  t today  q quit</span></div>
       </div>
     </div>
   </div>
@@ -100,7 +100,7 @@
       <div class="feature">
         <div class="feature-icon">&#x1F5A5;</div>
         <h3>Terminal UI</h3>
-        <p>Vim-style TUI to browse entries by day. Scroll with j/k, switch days with h/l. All in your terminal.</p>
+        <p>Vim-style TUI to browse entries by day. Scroll with j/k, switch days with h/l, delete with d. All in your terminal.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#x26A1;</div>
@@ -110,7 +110,7 @@
       <div class="feature">
         <div class="feature-icon">&#x1F4E6;</div>
         <h3>Single binary</h3>
-        <p>One Go binary. No runtime deps. <code>go install</code> and you're done. DB auto-creates at <code>~/.hrs/hrs.db</code>.</p>
+        <p>Pure Go, no CGo. Download a <a href="https://github.com/heuwels/hrs/releases/latest">prebuilt binary</a> or <code>go install</code>. DB auto-creates at <code>~/.hrs/hrs.db</code>.</p>
       </div>
     </div>
   </div>
@@ -121,14 +121,15 @@
 <section class="install" id="install">
   <div class="container">
     <h2>Get <span class="accent">started</span></h2>
-    <pre><code><span class="comment"># Install</span>
+    <pre><code><span class="comment"># Install (pick one)</span>
 go install github.com/heuwels/hrs@latest
+<span class="comment"># or download from https://github.com/heuwels/hrs/releases/latest</span>
 
 <span class="comment"># Start the daemon (optional &mdash; CLI works without it)</span>
 hrs serve &amp;
 
 <span class="comment"># Log from any agent or terminal</span>
-hrs log -c dev -t "built auth flow" -b "oauth2 pkce,token refresh,tests" -e 3
+hrs log -c dev -t "built auth flow" -b "oauth2 pkce;token refresh;tests" -e 3
 
 <span class="comment"># See what happened today</span>
 hrs ls

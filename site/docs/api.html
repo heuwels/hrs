@@ -41,21 +41,41 @@
 }</code></pre>
 
     <table>
-      <tr><th>Field</th><th>Type</th><th>Required</th><th>Default</th></tr>
-      <tr><td><code>category</code></td><td>string</td><td>yes</td><td></td></tr>
-      <tr><td><code>title</code></td><td>string</td><td>yes</td><td></td></tr>
-      <tr><td><code>bullets</code></td><td>[]string</td><td>yes</td><td></td></tr>
-      <tr><td><code>hours_est</code></td><td>number</td><td>no</td><td>0</td></tr>
-      <tr><td><code>date</code></td><td>string</td><td>no</td><td>today</td></tr>
-      <tr><td><code>time</code></td><td>string</td><td>no</td><td>now</td></tr>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Default</th><th>Validation</th></tr>
+      <tr><td><code>category</code></td><td>string</td><td>yes</td><td></td><td>non-empty</td></tr>
+      <tr><td><code>title</code></td><td>string</td><td>yes</td><td></td><td>non-empty</td></tr>
+      <tr><td><code>bullets</code></td><td>[]string</td><td>yes</td><td></td><td>at least one non-empty</td></tr>
+      <tr><td><code>hours_est</code></td><td>number</td><td>no</td><td>0</td><td>0&ndash;24</td></tr>
+      <tr><td><code>date</code></td><td>string</td><td>no</td><td>today</td><td>YYYY-MM-DD</td></tr>
+      <tr><td><code>time</code></td><td>string</td><td>no</td><td>now</td><td>HH:MM</td></tr>
     </table>
 
     <p>Returns <code>201</code>:</p>
     <pre><code>{"id": 42, "date": "2026-04-13"}</code></pre>
 
-    <h2>GET /entries?date=YYYY-MM-DD</h2>
-    <p>List entries for a date. Defaults to today.</p>
-    <p>Returns <code>200</code> with a JSON array of entries.</p>
+    <h2>PUT /entries/{id}</h2>
+    <p>Update an existing entry by ID. Accepts the same fields as POST.</p>
+    <pre><code>curl -X PUT http://localhost:9746/entries/42 -d '{
+  "category": "dev",
+  "title": "updated title",
+  "bullets": ["revised bullet"],
+  "hours_est": 4,
+  "date": "2026-04-13",
+  "time": "14:30"
+}'</code></pre>
+    <p>Returns <code>200</code> with the updated entry.</p>
+
+    <h2>GET /entries</h2>
+    <p>List entries. Supports three query modes:</p>
+    <pre><code># single date (default: today)
+GET /entries?date=2026-04-13
+
+# date range (inclusive)
+GET /entries?from=2026-04-01&amp;to=2026-04-15
+
+# date range with category filter
+GET /entries?from=2026-04-01&amp;to=2026-04-15&amp;category=dev</code></pre>
+    <p>Returns <code>200</code> with a JSON array of entries. Returns <code>[]</code> if no matches.</p>
 
     <h2>DELETE /entries/{id}</h2>
     <p>Remove an entry by ID.</p>
@@ -65,14 +85,17 @@
     <h2>GET /schema</h2>
     <p>Returns field names, types, and descriptions. Agents can call this to self-discover the API without hardcoded instructions in their prompts.</p>
     <pre><code>{
-  "endpoint": "POST /entries",
-  "fields": [
-    {"name": "category", "type": "string", "required": true, "description": "..."},
-    {"name": "title", "type": "string", "required": true, "description": "..."},
-    {"name": "bullets", "type": "[]string", "required": true, "description": "..."},
-    {"name": "hours_est", "type": "number", "required": false, "description": "..."},
-    {"name": "date", "type": "string", "required": false, "description": "..."},
-    {"name": "time", "type": "string", "required": false, "description": "..."}
+  "endpoints": [
+    {
+      "method": "POST",
+      "path": "/entries",
+      "fields": [
+        {"name": "category", "type": "string", "required": true, "description": "..."}
+      ]
+    },
+    {"method": "PUT", "path": "/entries/{id}", "description": "..."},
+    {"method": "GET", "path": "/entries", "description": "..."},
+    {"method": "DELETE", "path": "/entries/{id}", "description": "..."}
   ]
 }</code></pre>
 
