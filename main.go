@@ -5,6 +5,8 @@ import (
 	"os"
 )
 
+var version = "dev"
+
 const usage = `hrs - timesheets for your agent
 
 usage:
@@ -12,8 +14,13 @@ usage:
   hrs log [flags]       add an entry
   hrs ls [date]         list entries (default: today)
   hrs tui [date]        interactive explorer
+  hrs edit <id>         edit an entry
+  hrs rm <id>           delete an entry
+  hrs export [flags]    export entries (json|csv)
+  hrs categories        list all categories
   hrs migrate [flags]   import existing markdown files
   hrs docs [flags]      serve the documentation site
+  hrs version           print version
 `
 
 func main() {
@@ -32,10 +39,20 @@ func main() {
 		err = cmdLs(os.Args[2:])
 	case "tui":
 		err = cmdTUI(os.Args[2:])
+	case "edit":
+		err = cmdEdit(os.Args[2:])
+	case "rm":
+		err = cmdRm(os.Args[2:])
+	case "export":
+		err = cmdExport(os.Args[2:])
+	case "categories":
+		err = cmdCategories(os.Args[2:])
 	case "migrate":
 		err = cmdMigrate(os.Args[2:])
 	case "docs":
 		err = cmdDocs(os.Args[2:])
+	case "version":
+		fmt.Println(version)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n%s", os.Args[1], usage)
 		os.Exit(1)

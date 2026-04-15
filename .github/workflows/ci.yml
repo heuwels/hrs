@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit tests
+        run: go test -race ./...
+
+      - name: Build binary
+        run: go build -o hrs .
+
+      - name: E2E — version
+        run: ./hrs version
+
+      - name: E2E — log entry
+        run: |
+          ./hrs log -c dev -t "Test entry" -b "bullet one;bullet two" -e 1.5
+          echo "--- log succeeded ---"
+
+      - name: E2E — list today
+        run: ./hrs ls
+
+      - name: E2E — list as JSON
+        run: ./hrs ls --format json
+
+      - name: E2E — categories
+        run: ./hrs categories
+
+      - name: E2E — edit entry
+        run: ./hrs edit 1 -t "Updated title"
+
+      - name: E2E — export JSON
+        run: ./hrs export --format json
+
+      - name: E2E — export CSV
+        run: ./hrs export --format csv
+
+      - name: E2E — delete entry
+        run: ./hrs rm 1
+
+      - name: E2E — verify deletion
+        run: |
+          output=$(./hrs ls --format json)
+          if echo "$output" | grep -q "Updated title"; then
+            echo "FAIL: entry still exists after deletion"
+            exit 1
+          fi
+          echo "--- deletion verified ---"

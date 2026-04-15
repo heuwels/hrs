@@ -19,17 +19,19 @@ var (
 	helpStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	selStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))
 	moreStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+	msgStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Italic(true)
 )
 
 type tuiModel struct {
-	db       *sql.DB
-	date     string
-	dates    []string
-	entries  []Entry
-	cursor   int
-	offset   int
-	height   int
-	width    int
+	db      *sql.DB
+	date    string
+	dates   []string
+	entries []Entry
+	cursor  int
+	offset  int
+	height  int
+	width   int
+	msg     string
 }
 
 func newTUIModel(db *sql.DB, date string) tuiModel {
@@ -76,6 +78,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.width = msg.Width
 	case tea.KeyMsg:
+		m.msg = "" // clear any status message
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -116,6 +119,23 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			m.loadDates()
 			m.loadEntries()
+		case "d":
+			if len(m.entries) > 0 && m.cursor < len(m.entries) {
+				e := m.entries[m.cursor]
+				if _, err := DeleteEntryByID(m.db, e.ID); err == nil {
+					m.loadDates()
+					m.loadEntries()
+					if m.cursor >= len(m.entries) && m.cursor > 0 {
+						m.cursor = len(m.entries) - 1
+					}
+					m.msg = fmt.Sprintf("deleted entry %d", e.ID)
+				}
+			}
+		case "e":
+			if len(m.entries) > 0 && m.cursor < len(m.entries) {
+				e := m.entries[m.cursor]
+				m.msg = fmt.Sprintf("use: hrs edit %d", e.ID)
+			}
 		}
 	}
 	return m, nil
@@ -235,8 +255,13 @@ func (m tuiModel) View() string {
 		)
 	}
 
+	// Status message
+	if m.msg != "" {
+		fmt.Fprintf(&b, "  %s\n", msgStyle.Render(m.msg))
+	}
+
 	// Footer
-	b.WriteString(helpStyle.Render("  j/k scroll  h/l day  g/G top/bottom  t today  r refresh  q quit"))
+	b.WriteString(helpStyle.Render("  j/k scroll  h/l day  d delete  e edit  g/G top/bottom  t today  r refresh  q quit"))
 
 	return b.String()
 }
