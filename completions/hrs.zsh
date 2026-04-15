@@ -39,10 +39,21 @@ _hrs() {
                     ;;
                 ls)
                     _arguments \
-                        '--format[Output format]:format:(table json csv)' \
+                        '--format[Output format]:format:(md json)' \
                         '--from[Start date]:date:' \
                         '--to[End date]:date:' \
                         '--category[Filter by category]:category:->categories'
+                    ;;
+                export)
+                    _arguments \
+                        '--format[Output format]:format:(json csv)' \
+                        '--from[Start date]:date:' \
+                        '--to[End date]:date:' \
+                        '--category[Filter by category]:category:->categories'
+                    ;;
+                rm)
+                    _arguments \
+                        '1:entry ID:'
                     ;;
                 edit)
                     _arguments \

@@ -22,7 +22,7 @@ _hrs() {
             ;;
         ls)
             case "$prev" in
-                --format) COMPREPLY=($(compgen -W "table json csv" -- "$cur")); return ;;
+                --format) COMPREPLY=($(compgen -W "md json" -- "$cur")); return ;;
                 --from|--to) return ;;
                 --category) COMPREPLY=($(compgen -W "$(hrs categories 2>/dev/null)" -- "$cur")); return ;;
             esac
@@ -39,7 +39,16 @@ _hrs() {
             COMPREPLY=($(compgen -W "-c -t -b -e -d -T" -- "$cur"))
             return
             ;;
-        rm|export|docs|serve|tui|migrate|categories|version)
+        export)
+            case "$prev" in
+                --format) COMPREPLY=($(compgen -W "json csv" -- "$cur")); return ;;
+                --from|--to) return ;;
+                --category) COMPREPLY=($(compgen -W "$(hrs categories 2>/dev/null)" -- "$cur")); return ;;
+            esac
+            COMPREPLY=($(compgen -W "--format --from --to --category" -- "$cur"))
+            return
+            ;;
+        rm|docs|serve|tui|migrate|categories|version)
             return
             ;;
     esac

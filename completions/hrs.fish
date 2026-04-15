@@ -27,10 +27,16 @@ complete -c hrs -n "__fish_seen_subcommand_from log" -s d -d "Date"
 complete -c hrs -n "__fish_seen_subcommand_from log" -s T -d "Time"
 
 # ls flags
-complete -c hrs -n "__fish_seen_subcommand_from ls" -l format -d "Output format" -xa "table json csv"
+complete -c hrs -n "__fish_seen_subcommand_from ls" -l format -d "Output format" -xa "md json"
 complete -c hrs -n "__fish_seen_subcommand_from ls" -l from -d "Start date"
 complete -c hrs -n "__fish_seen_subcommand_from ls" -l to -d "End date"
 complete -c hrs -n "__fish_seen_subcommand_from ls" -l category -d "Filter by category" -xa "(hrs categories 2>/dev/null)"
+
+# export flags
+complete -c hrs -n "__fish_seen_subcommand_from export" -l format -d "Output format" -xa "json csv"
+complete -c hrs -n "__fish_seen_subcommand_from export" -l from -d "Start date"
+complete -c hrs -n "__fish_seen_subcommand_from export" -l to -d "End date"
+complete -c hrs -n "__fish_seen_subcommand_from export" -l category -d "Filter by category" -xa "(hrs categories 2>/dev/null)"
 
 # edit flags
 complete -c hrs -n "__fish_seen_subcommand_from edit" -s c -d "Category" -xa "(hrs categories 2>/dev/null)"

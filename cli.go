@@ -183,17 +183,49 @@ func cmdLs(args []string) error {
 	}
 
 	if len(entries) == 0 {
-		fmt.Printf("No entries for %s\n", date)
+		if *from != "" {
+			fmt.Printf("No entries from %s to %s\n", *from, *to)
+		} else {
+			fmt.Printf("No entries for %s\n", date)
+		}
 		return nil
 	}
 
-	// Color output when stdout is a TTY
-	if isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd()) {
-		renderColorLs(entries)
-	} else {
-		fmt.Print(RenderMarkdown(entries))
+	isTTY := isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
+
+	// Group by date for range queries, render each group
+	groups := groupByDate(entries)
+	for i, g := range groups {
+		if i > 0 {
+			fmt.Println()
+		}
+		if isTTY {
+			renderColorLs(g)
+		} else {
+			fmt.Print(RenderMarkdown(g))
+		}
 	}
 	return nil
+}
+
+func groupByDate(entries []Entry) [][]Entry {
+	var groups [][]Entry
+	var cur []Entry
+	var curDate string
+	for _, e := range entries {
+		if e.Date != curDate {
+			if len(cur) > 0 {
+				groups = append(groups, cur)
+			}
+			cur = nil
+			curDate = e.Date
+		}
+		cur = append(cur, e)
+	}
+	if len(cur) > 0 {
+		groups = append(groups, cur)
+	}
+	return groups
 }
 
 func renderColorLs(entries []Entry) {
@@ -287,17 +319,17 @@ func cmdMigrate(args []string) error {
 }
 
 func cmdRm(args []string) error {
-	fs := flag.NewFlagSet("hrs rm", flag.ExitOnError)
-	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
-	fs.Parse(args)
-
-	if fs.NArg() < 1 {
+	if len(args) < 1 {
 		return fmt.Errorf("usage: hrs rm <id>")
 	}
-	id, err := strconv.ParseInt(fs.Arg(0), 10, 64)
+	id, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
-		return fmt.Errorf("invalid id: %s", fs.Arg(0))
+		return fmt.Errorf("invalid id: %s", args[0])
 	}
+
+	fs := flag.NewFlagSet("hrs rm", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	fs.Parse(args[1:])
 
 	db, err := OpenDB(*dbPath)
 	if err != nil {
@@ -316,6 +348,14 @@ func cmdRm(args []string) error {
 }
 
 func cmdEdit(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: hrs edit <id> [flags]")
+	}
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid id: %s", args[0])
+	}
+
 	fs := flag.NewFlagSet("hrs edit", flag.ExitOnError)
 	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
 	category := fs.String("c", "", "category")
@@ -324,15 +364,7 @@ func cmdEdit(args []string) error {
 	hours := fs.Float64("e", -1, "estimated person-hours")
 	date := fs.String("d", "", "date (YYYY-MM-DD)")
 	timeFlag := fs.String("T", "", "time (HH:MM)")
-	fs.Parse(args)
-
-	if fs.NArg() < 1 {
-		return fmt.Errorf("usage: hrs edit <id> [flags]")
-	}
-	id, err := strconv.ParseInt(fs.Arg(0), 10, 64)
-	if err != nil {
-		return fmt.Errorf("invalid id: %s", fs.Arg(0))
-	}
+	fs.Parse(args[1:])
 
 	db, err := OpenDB(*dbPath)
 	if err != nil {
