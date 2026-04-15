@@ -8,7 +8,13 @@ Timesheets for your agent. A CLI backed by SQLite that any AI agent can call to 
 
 I was tired of getting to the end of each day after context-switching between a dozen priorities and feeling like every day was an armed robbery where my time was the prize. I needed a way to recall what I actually worked on.
 
-AI coding agents (Claude Code, Cursor, etc.) can't write files outside their working directory. This gives them a local API to push structured work logs to from wherever they're running, rendered as markdown for humans to read.
+I started with a markdown file archive and a TUI wrapper, but three things broke that approach:
+
+1. **Blind writes** — Claude would attempt to write directly to the markdown file, fail, and waste a tool-use cycle.
+2. **File locking** — multiple agents running concurrently would clobber each other's writes.
+3. **Sandboxing** — guardrails that prevent agents writing outside the project directory meant they couldn't reach a shared worklog at all.
+
+So I built a CLI backed by SQLite. Any agent calls `hrs log` from any directory, entries go into a single database, and markdown files are rendered as a view. No daemon, no config.
 
 ## Install
 
