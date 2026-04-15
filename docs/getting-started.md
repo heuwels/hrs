@@ -6,13 +6,6 @@
 
 ## install
 
-### homebrew (macos / linux)
-
-```bash
-brew tap heuwels/tap
-brew install hrs
-```
-
 ### download a binary
 
 grab the latest release for your platform from

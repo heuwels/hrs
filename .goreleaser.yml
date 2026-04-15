@@ -34,19 +34,3 @@ release:
   github:
     owner: heuwels
     name: hrs
-
-brews:
-  - repository:
-      owner: heuwels
-      name: homebrew-tap
-    name: hrs
-    homepage: "https://github.com/heuwels/hrs"
-    description: "Timesheets for your agent — AI-native time tracking with local SQLite storage"
-    license: "MIT"
-    test: |
-      assert_match "hrs", shell_output("#{bin}/hrs version")
-    install: |
-      bin.install "hrs"
-      bash_completion.install "completions/hrs.bash" => "hrs"
-      zsh_completion.install "completions/hrs.zsh" => "_hrs"
-      fish_completion.install "completions/hrs.fish"
