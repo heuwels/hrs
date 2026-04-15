@@ -82,11 +82,8 @@ add to your `CLAUDE.md`:
 ````markdown
 ## work logging
 
-after completing significant work, log it:
-
-```bash
-hrs log -c dev -t "Short description" -b "outcome one;outcome two" -e 2
-```
+after completing significant work, log it with `hrs log`.
+run `hrs log -h` to discover the flags.
 
 log proactively. don't wait to be asked.
 ````

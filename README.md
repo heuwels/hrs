@@ -197,9 +197,7 @@ All agent sessions MUST log significant work to the shared worklog.
 
 ### How to log:
 
-```bash
-hrs log -c dev -t "Short description" -b "outcome one;outcome two" -e 2
-```
+Log with `hrs log`. Run `hrs log -h` to discover the flags.
 
 Or via HTTP if sandboxed:
 
