@@ -14,6 +14,7 @@ usage:
   hrs log [flags]       add an entry
   hrs ls [date]         list entries (default: today)
   hrs goals [action]    manage daily goals
+  hrs strategy [action]  manage strategic goals
   hrs tui [date]        interactive explorer
   hrs edit <id>         edit an entry
   hrs rm <id>           delete an entry
@@ -40,6 +41,8 @@ func main() {
 		err = cmdLs(os.Args[2:])
 	case "goals":
 		err = cmdGoals(os.Args[2:])
+	case "strategy":
+		err = cmdStrategy(os.Args[2:])
 	case "tui":
 		err = cmdTUI(os.Args[2:])
 	case "edit":

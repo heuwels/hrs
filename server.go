@@ -49,6 +49,7 @@ var schema = map[string]any{
 			"fields": []map[string]any{
 				{"name": "text", "type": "string", "required": true, "description": "Goal description"},
 				{"name": "date", "type": "string", "required": false, "description": "YYYY-MM-DD, defaults to today"},
+				{"name": "strategy_id", "type": "number", "required": false, "description": "Link to a strategic goal"},
 			},
 		},
 		{
@@ -75,6 +76,34 @@ var schema = map[string]any{
 			"method":      "DELETE",
 			"path":        "/goals/{id}",
 			"description": "Delete a goal.",
+		},
+		{
+			"method": "POST",
+			"path":   "/strategies",
+			"fields": []map[string]any{
+				{"name": "title", "type": "string", "required": true, "description": "Strategic goal title"},
+				{"name": "description", "type": "string", "required": false, "description": "Longer description of the strategic goal"},
+			},
+		},
+		{
+			"method":      "GET",
+			"path":        "/strategies",
+			"description": "List strategies. Query param: status (active|completed|archived, default: all).",
+		},
+		{
+			"method":      "GET",
+			"path":        "/strategies/{id}",
+			"description": "Get strategy report with goal counts and total hours.",
+		},
+		{
+			"method":      "PUT",
+			"path":        "/strategies/{id}",
+			"description": "Update strategy status. Body: {\"status\": \"active|completed|archived\"}.",
+		},
+		{
+			"method":      "DELETE",
+			"path":        "/strategies/{id}",
+			"description": "Delete a strategy (unlinks goals, does not delete them).",
 		},
 	},
 }
@@ -201,8 +230,9 @@ func (s *Server) ListGoals(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) CreateGoal(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Date string `json:"date"`
-		Text string `json:"text"`
+		Date       string `json:"date"`
+		Text       string `json:"text"`
+		StrategyID *int64 `json:"strategy_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
@@ -212,7 +242,7 @@ func (s *Server) CreateGoal(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "text required"})
 		return
 	}
-	id, err := InsertGoal(s.db, body.Date, body.Text)
+	id, err := InsertGoal(s.db, body.Date, body.Text, body.StrategyID)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -220,7 +250,11 @@ func (s *Server) CreateGoal(w http.ResponseWriter, r *http.Request) {
 	if body.Date == "" {
 		body.Date = now().Format("2006-01-02")
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "date": body.Date, "text": body.Text})
+	resp := map[string]any{"id": id, "date": body.Date, "text": body.Text}
+	if body.StrategyID != nil {
+		resp["strategy_id"] = *body.StrategyID
+	}
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (s *Server) CompleteGoalHandler(w http.ResponseWriter, r *http.Request) {
@@ -284,6 +318,95 @@ func (s *Server) DeleteGoalHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := DeleteGoal(s.db, id); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": id})
+}
+
+// --- Strategy handlers ---
+
+func (s *Server) ListStrategies(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	strategies, err := GetStrategies(s.db, status)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if strategies == nil {
+		strategies = []Strategy{}
+	}
+	writeJSON(w, http.StatusOK, strategies)
+}
+
+func (s *Server) CreateStrategy(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Title       string `json:"title"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
+		return
+	}
+	if body.Title == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "title required"})
+		return
+	}
+	id, err := InsertStrategy(s.db, body.Title, body.Description)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "title": body.Title})
+}
+
+func (s *Server) GetStrategyReportHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	report, err := GetStrategyReport(s.db, id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (s *Server) UpdateStrategyStatusHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
+		return
+	}
+	switch body.Status {
+	case "active", "completed", "archived":
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be active, completed, or archived"})
+		return
+	}
+	if err := UpdateStrategyStatus(s.db, id, body.Status); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "status": body.Status})
+}
+
+func (s *Server) DeleteStrategyHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	if err := DeleteStrategy(s.db, id); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

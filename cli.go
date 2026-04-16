@@ -63,6 +63,11 @@ func cmdServe(args []string) error {
 	mux.HandleFunc("PUT /goals/{id}/undo", s.UncompleteGoalHandler)
 	mux.HandleFunc("POST /goals/{id}/link", s.LinkGoalEntriesHandler)
 	mux.HandleFunc("DELETE /goals/{id}", s.DeleteGoalHandler)
+	mux.HandleFunc("GET /strategies", s.ListStrategies)
+	mux.HandleFunc("POST /strategies", s.CreateStrategy)
+	mux.HandleFunc("GET /strategies/{id}", s.GetStrategyReportHandler)
+	mux.HandleFunc("PUT /strategies/{id}", s.UpdateStrategyStatusHandler)
+	mux.HandleFunc("DELETE /strategies/{id}", s.DeleteStrategyHandler)
 	mux.HandleFunc("GET /docs/", http.StripPrefix("/docs", http.HandlerFunc(docsHandler)).ServeHTTP)
 	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/docs/", http.StatusMovedPermanently)
@@ -553,14 +558,18 @@ func cmdGoalsList(args []string) error {
 		fmt.Println(hdr.Render(fmt.Sprintf("Goals — %s  (%d/%d)", *date, done, len(goals))))
 		fmt.Println()
 		for _, g := range goals {
+			stratTag := ""
+			if g.StrategyID != nil {
+				stratTag = dim.Render(fmt.Sprintf(" s#%d", *g.StrategyID))
+			}
 			if g.Completed {
 				fmt.Printf("  %s %s", check.Render("[x]"), dim.Render(g.Text))
 				if len(g.EntryIDs) > 0 {
 					fmt.Printf(" %s", dim.Render(fmt.Sprintf("(entries: %s)", formatIDs(g.EntryIDs))))
 				}
-				fmt.Println()
+				fmt.Printf("%s\n", stratTag)
 			} else {
-				fmt.Printf("  %s %s %s\n", open.Render("[ ]"), g.Text, dim.Render(fmt.Sprintf("#%d", g.ID)))
+				fmt.Printf("  %s %s %s%s\n", open.Render("[ ]"), g.Text, dim.Render(fmt.Sprintf("#%d", g.ID)), stratTag)
 			}
 		}
 	} else {
@@ -588,6 +597,7 @@ func cmdGoalsAdd(args []string) error {
 	fs := flag.NewFlagSet("hrs goals add", flag.ExitOnError)
 	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
 	date := fs.String("d", "", "date (YYYY-MM-DD, default: today)")
+	strategyFlag := fs.Int64("s", 0, "link to strategy ID")
 	fs.Parse(args)
 
 	text := strings.Join(fs.Args(), " ")
@@ -604,11 +614,20 @@ func cmdGoalsAdd(args []string) error {
 	}
 	defer db.Close()
 
-	id, err := InsertGoal(db, *date, text)
+	var sid *int64
+	if *strategyFlag != 0 {
+		sid = strategyFlag
+	}
+
+	id, err := InsertGoal(db, *date, text, sid)
 	if err != nil {
 		return err
 	}
-	out, _ := json.Marshal(map[string]any{"id": id, "date": *date, "text": text})
+	resp := map[string]any{"id": id, "date": *date, "text": text}
+	if sid != nil {
+		resp["strategy_id"] = *sid
+	}
+	out, _ := json.Marshal(resp)
 	fmt.Println(string(out))
 	return nil
 }
@@ -744,6 +763,313 @@ func cmdGoalsLink(args []string) error {
 	}
 	out, _ := json.Marshal(map[string]any{"goal_id": id, "linked_entries": entryIDs})
 	fmt.Println(string(out))
+	return nil
+}
+
+func cmdStrategy(args []string) error {
+	action := ""
+	if len(args) > 0 {
+		switch args[0] {
+		case "add", "done", "archive", "reopen", "rm", "edit", "report":
+			action = args[0]
+			args = args[1:]
+		}
+	}
+
+	switch action {
+	case "add":
+		return cmdStrategyAdd(args)
+	case "done":
+		return cmdStrategyStatus(args, "completed")
+	case "archive":
+		return cmdStrategyStatus(args, "archived")
+	case "reopen":
+		return cmdStrategyStatus(args, "active")
+	case "rm":
+		return cmdStrategyRm(args)
+	case "edit":
+		return cmdStrategyEdit(args)
+	case "report":
+		return cmdStrategyReport(args)
+	default:
+		// Default: if arg looks like an ID, show report; otherwise list
+		if len(args) > 0 {
+			if _, err := strconv.ParseInt(args[0], 10, 64); err == nil {
+				return cmdStrategyReport(args)
+			}
+		}
+		return cmdStrategyList(args)
+	}
+}
+
+func cmdStrategyList(args []string) error {
+	fs := flag.NewFlagSet("hrs strategy", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	status := fs.String("status", "", "filter by status (active|completed|archived)")
+	format := fs.String("format", "", "output format (json for machine-readable)")
+	fs.Parse(args)
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	strategies, err := GetStrategies(db, *status)
+	if err != nil {
+		return err
+	}
+
+	if *format == "json" {
+		if strategies == nil {
+			strategies = []Strategy{}
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(strategies)
+	}
+
+	if len(strategies) == 0 {
+		fmt.Println("No strategies found.")
+		return nil
+	}
+
+	isTTY := isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
+
+	if isTTY {
+		hdr := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+		dim := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+		activeSt := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+		completedSt := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+		archivedSt := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+		fmt.Println(hdr.Render("Strategies"))
+		fmt.Println()
+		for _, s := range strategies {
+			var st lipgloss.Style
+			switch s.Status {
+			case "completed":
+				st = completedSt
+			case "archived":
+				st = archivedSt
+			default:
+				st = activeSt
+			}
+			badge := st.Render(fmt.Sprintf("[%s]", s.Status))
+			fmt.Printf("  %s %s %s", dim.Render(fmt.Sprintf("#%d", s.ID)), badge, s.Title)
+			if s.Description != "" {
+				fmt.Printf(" %s", dim.Render("- "+s.Description))
+			}
+			fmt.Println()
+		}
+	} else {
+		for _, s := range strategies {
+			fmt.Printf("#%d [%s] %s\n", s.ID, s.Status, s.Title)
+		}
+	}
+	return nil
+}
+
+func cmdStrategyAdd(args []string) error {
+	fs := flag.NewFlagSet("hrs strategy add", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	title := fs.String("t", "", "title")
+	desc := fs.String("desc", "", "description")
+	fs.Parse(args)
+
+	// Allow title as positional arg or -t flag
+	if *title == "" {
+		*title = strings.Join(fs.Args(), " ")
+	}
+	if *title == "" {
+		return fmt.Errorf("usage: hrs strategy add -t \"title\" [-desc \"description\"]")
+	}
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	id, err := InsertStrategy(db, *title, *desc)
+	if err != nil {
+		return err
+	}
+	out, _ := json.Marshal(map[string]any{"id": id, "title": *title})
+	fmt.Println(string(out))
+	return nil
+}
+
+func cmdStrategyStatus(args []string, status string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: hrs strategy %s <id>", status)
+	}
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid strategy id: %s", args[0])
+	}
+
+	fs := flag.NewFlagSet("hrs strategy "+status, flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	fs.Parse(args[1:])
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	if err := UpdateStrategyStatus(db, id, status); err != nil {
+		return err
+	}
+	out, _ := json.Marshal(map[string]any{"id": id, "status": status})
+	fmt.Println(string(out))
+	return nil
+}
+
+func cmdStrategyEdit(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: hrs strategy edit <id> [-t title] [-desc description]")
+	}
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid strategy id: %s", args[0])
+	}
+
+	fs := flag.NewFlagSet("hrs strategy edit", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	title := fs.String("t", "", "title")
+	desc := fs.String("desc", "", "description")
+	fs.Parse(args[1:])
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	s, err := GetStrategyByID(db, id)
+	if err != nil {
+		return fmt.Errorf("strategy %d not found", id)
+	}
+	if *title != "" {
+		s.Title = *title
+	}
+	if *desc != "" {
+		s.Description = *desc
+	}
+	if err := UpdateStrategy(db, id, s.Title, s.Description); err != nil {
+		return err
+	}
+	out, _ := json.Marshal(s)
+	fmt.Println(string(out))
+	return nil
+}
+
+func cmdStrategyRm(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: hrs strategy rm <id>")
+	}
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid strategy id: %s", args[0])
+	}
+
+	fs := flag.NewFlagSet("hrs strategy rm", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	fs.Parse(args[1:])
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	if err := DeleteStrategy(db, id); err != nil {
+		return err
+	}
+	out, _ := json.Marshal(map[string]any{"deleted": id})
+	fmt.Println(string(out))
+	return nil
+}
+
+func cmdStrategyReport(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: hrs strategy report <id>")
+	}
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid strategy id: %s", args[0])
+	}
+
+	fs := flag.NewFlagSet("hrs strategy report", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	format := fs.String("format", "", "output format (json for machine-readable)")
+	fs.Parse(args[1:])
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	r, err := GetStrategyReport(db, id)
+	if err != nil {
+		return err
+	}
+
+	if *format == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(r)
+	}
+
+	goals, _ := GetStrategyGoals(db, id)
+
+	isTTY := isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
+
+	if isTTY {
+		hdr := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+		dim := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+		activeSt := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+		check := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+		open := lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+
+		badge := activeSt.Render(fmt.Sprintf("[%s]", r.Status))
+		fmt.Printf("%s %s\n", hdr.Render(fmt.Sprintf("Strategy #%d: %s", r.ID, r.Title)), badge)
+		if r.Description != "" {
+			fmt.Printf("%s\n", dim.Render(r.Description))
+		}
+		fmt.Printf("%s\n\n", dim.Render("Created: "+r.CreatedAt))
+
+		fmt.Printf("  Goals:  %d/%d done\n", r.GoalsDone, r.GoalsTotal)
+		fmt.Printf("  Hours:  %.1fh (%.1fd)\n\n", r.TotalHours, r.TotalHours/8)
+
+		if len(goals) > 0 {
+			fmt.Println(hdr.Render("  Linked goals:"))
+			for _, g := range goals {
+				if g.Completed {
+					fmt.Printf("    %s %s %s\n", check.Render("[x]"), dim.Render(g.Text), dim.Render(g.Date))
+				} else {
+					fmt.Printf("    %s %s %s\n", open.Render("[ ]"), g.Text, dim.Render(g.Date))
+				}
+			}
+		}
+	} else {
+		fmt.Printf("Strategy #%d: %s [%s]\n", r.ID, r.Title, r.Status)
+		if r.Description != "" {
+			fmt.Printf("%s\n", r.Description)
+		}
+		fmt.Printf("Created: %s\n\n", r.CreatedAt)
+		fmt.Printf("Goals: %d/%d done\n", r.GoalsDone, r.GoalsTotal)
+		fmt.Printf("Hours: %.1fh (%.1fd)\n\n", r.TotalHours, r.TotalHours/8)
+		for _, g := range goals {
+			mark := "[ ]"
+			if g.Completed {
+				mark = "[x]"
+			}
+			fmt.Printf("  %s %s (%s)\n", mark, g.Text, g.Date)
+		}
+	}
 	return nil
 }
 
