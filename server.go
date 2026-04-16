@@ -43,6 +43,39 @@ var schema = map[string]any{
 			"path":        "/entries/{id}",
 			"description": "Delete an entry by ID.",
 		},
+		{
+			"method": "POST",
+			"path":   "/goals",
+			"fields": []map[string]any{
+				{"name": "text", "type": "string", "required": true, "description": "Goal description"},
+				{"name": "date", "type": "string", "required": false, "description": "YYYY-MM-DD, defaults to today"},
+			},
+		},
+		{
+			"method":      "GET",
+			"path":        "/goals",
+			"description": "List goals. Query params: date (YYYY-MM-DD, defaults to today).",
+		},
+		{
+			"method":      "PUT",
+			"path":        "/goals/{id}/done",
+			"description": "Mark a goal complete. Optional body: {\"entry_ids\": [1,2]} to link entries.",
+		},
+		{
+			"method":      "PUT",
+			"path":        "/goals/{id}/undo",
+			"description": "Reopen a completed goal.",
+		},
+		{
+			"method":      "POST",
+			"path":        "/goals/{id}/link",
+			"description": "Link entry IDs to a goal. Body: {\"entry_ids\": [1,2]}.",
+		},
+		{
+			"method":      "DELETE",
+			"path":        "/goals/{id}",
+			"description": "Delete a goal.",
+		},
 	},
 }
 
@@ -145,6 +178,115 @@ func (s *Server) DeleteEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.syncMarkdown(date)
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": id})
+}
+
+// --- Goal handlers ---
+
+func (s *Server) ListGoals(w http.ResponseWriter, r *http.Request) {
+	date := r.URL.Query().Get("date")
+	if date == "" {
+		date = now().Format("2006-01-02")
+	}
+	goals, err := GetGoals(s.db, date)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if goals == nil {
+		goals = []Goal{}
+	}
+	writeJSON(w, http.StatusOK, goals)
+}
+
+func (s *Server) CreateGoal(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Date string `json:"date"`
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
+		return
+	}
+	if body.Text == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "text required"})
+		return
+	}
+	id, err := InsertGoal(s.db, body.Date, body.Text)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if body.Date == "" {
+		body.Date = now().Format("2006-01-02")
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "date": body.Date, "text": body.Text})
+}
+
+func (s *Server) CompleteGoalHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		EntryIDs []int64 `json:"entry_ids"`
+	}
+	json.NewDecoder(r.Body).Decode(&body) // optional body
+	if err := CompleteGoal(s.db, id, body.EntryIDs); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"completed": id, "entry_ids": body.EntryIDs})
+}
+
+func (s *Server) UncompleteGoalHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	if err := UncompleteGoal(s.db, id); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reopened": id})
+}
+
+func (s *Server) LinkGoalEntriesHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		EntryIDs []int64 `json:"entry_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
+		return
+	}
+	if len(body.EntryIDs) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "entry_ids required"})
+		return
+	}
+	if err := LinkGoalEntries(s.db, id, body.EntryIDs); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"goal_id": id, "linked_entries": body.EntryIDs})
+}
+
+func (s *Server) DeleteGoalHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	if err := DeleteGoal(s.db, id); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": id})
 }
 

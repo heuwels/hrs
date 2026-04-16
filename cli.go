@@ -57,6 +57,12 @@ func cmdServe(args []string) error {
 	mux.HandleFunc("POST /entries", s.CreateEntry)
 	mux.HandleFunc("PUT /entries/{id}", s.UpdateEntryHandler)
 	mux.HandleFunc("DELETE /entries/{id}", s.DeleteEntry)
+	mux.HandleFunc("GET /goals", s.ListGoals)
+	mux.HandleFunc("POST /goals", s.CreateGoal)
+	mux.HandleFunc("PUT /goals/{id}/done", s.CompleteGoalHandler)
+	mux.HandleFunc("PUT /goals/{id}/undo", s.UncompleteGoalHandler)
+	mux.HandleFunc("POST /goals/{id}/link", s.LinkGoalEntriesHandler)
+	mux.HandleFunc("DELETE /goals/{id}", s.DeleteGoalHandler)
 	mux.HandleFunc("GET /docs/", http.StripPrefix("/docs", http.HandlerFunc(docsHandler)).ServeHTTP)
 	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/docs/", http.StatusMovedPermanently)
@@ -455,6 +461,289 @@ func cmdExport(args []string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(entries)
 	}
+	return nil
+}
+
+func cmdGoals(args []string) error {
+	action := ""
+	if len(args) > 0 {
+		switch args[0] {
+		case "add", "done", "undo", "rm", "link":
+			action = args[0]
+			args = args[1:]
+		}
+	}
+
+	switch action {
+	case "add":
+		return cmdGoalsAdd(args)
+	case "done":
+		return cmdGoalsDone(args)
+	case "undo":
+		return cmdGoalsUndo(args)
+	case "rm":
+		return cmdGoalsRm(args)
+	case "link":
+		return cmdGoalsLink(args)
+	default:
+		return cmdGoalsList(args)
+	}
+}
+
+const goalsUsage = `hrs goals - manage daily goals
+
+usage:
+  hrs goals [-d date]                list goals (default: today)
+  hrs goals add "goal text" [-d ..]  add a goal
+  hrs goals done <id> [-e entry_ids] mark a goal complete
+  hrs goals undo <id>                reopen a completed goal
+  hrs goals rm <id>                  delete a goal
+  hrs goals link <id> -e entry_ids   link entries to a goal
+`
+
+func cmdGoalsList(args []string) error {
+	fs := flag.NewFlagSet("hrs goals", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	date := fs.String("d", "", "date (YYYY-MM-DD, default: today)")
+	format := fs.String("format", "", "output format (json for machine-readable)")
+	fs.Parse(args)
+
+	if *date == "" {
+		*date = now().Format("2006-01-02")
+	}
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	goals, err := GetGoals(db, *date)
+	if err != nil {
+		return err
+	}
+
+	if *format == "json" {
+		if goals == nil {
+			goals = []Goal{}
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(goals)
+	}
+
+	if len(goals) == 0 {
+		fmt.Printf("No goals for %s\n", *date)
+		return nil
+	}
+
+	isTTY := isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
+	done := 0
+	for _, g := range goals {
+		if g.Completed {
+			done++
+		}
+	}
+
+	if isTTY {
+		hdr := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+		dim := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+		check := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+		open := lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+		fmt.Println(hdr.Render(fmt.Sprintf("Goals — %s  (%d/%d)", *date, done, len(goals))))
+		fmt.Println()
+		for _, g := range goals {
+			if g.Completed {
+				fmt.Printf("  %s %s", check.Render("[x]"), dim.Render(g.Text))
+				if len(g.EntryIDs) > 0 {
+					fmt.Printf(" %s", dim.Render(fmt.Sprintf("(entries: %s)", formatIDs(g.EntryIDs))))
+				}
+				fmt.Println()
+			} else {
+				fmt.Printf("  %s %s %s\n", open.Render("[ ]"), g.Text, dim.Render(fmt.Sprintf("#%d", g.ID)))
+			}
+		}
+	} else {
+		fmt.Printf("Goals — %s  (%d/%d)\n\n", *date, done, len(goals))
+		for _, g := range goals {
+			mark := "[ ]"
+			if g.Completed {
+				mark = "[x]"
+			}
+			fmt.Printf("  %s %s (#%d)\n", mark, g.Text, g.ID)
+		}
+	}
+	return nil
+}
+
+func formatIDs(ids []int64) string {
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = strconv.FormatInt(id, 10)
+	}
+	return strings.Join(parts, ",")
+}
+
+func cmdGoalsAdd(args []string) error {
+	fs := flag.NewFlagSet("hrs goals add", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	date := fs.String("d", "", "date (YYYY-MM-DD, default: today)")
+	fs.Parse(args)
+
+	text := strings.Join(fs.Args(), " ")
+	if text == "" {
+		return fmt.Errorf("usage: hrs goals add \"goal text\"")
+	}
+	if *date == "" {
+		*date = now().Format("2006-01-02")
+	}
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	id, err := InsertGoal(db, *date, text)
+	if err != nil {
+		return err
+	}
+	out, _ := json.Marshal(map[string]any{"id": id, "date": *date, "text": text})
+	fmt.Println(string(out))
+	return nil
+}
+
+func cmdGoalsDone(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: hrs goals done <id> [-e entry_ids]")
+	}
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid goal id: %s", args[0])
+	}
+
+	fs := flag.NewFlagSet("hrs goals done", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	entryFlag := fs.String("e", "", "linked entry IDs (comma-separated)")
+	fs.Parse(args[1:])
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	var entryIDs []int64
+	if *entryFlag != "" {
+		for _, s := range strings.Split(*entryFlag, ",") {
+			eid, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid entry id: %s", s)
+			}
+			entryIDs = append(entryIDs, eid)
+		}
+	}
+
+	if err := CompleteGoal(db, id, entryIDs); err != nil {
+		return err
+	}
+	out, _ := json.Marshal(map[string]any{"completed": id, "entry_ids": entryIDs})
+	fmt.Println(string(out))
+	return nil
+}
+
+func cmdGoalsUndo(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: hrs goals undo <id>")
+	}
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid goal id: %s", args[0])
+	}
+
+	fs := flag.NewFlagSet("hrs goals undo", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	fs.Parse(args[1:])
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	if err := UncompleteGoal(db, id); err != nil {
+		return err
+	}
+	out, _ := json.Marshal(map[string]any{"reopened": id})
+	fmt.Println(string(out))
+	return nil
+}
+
+func cmdGoalsRm(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: hrs goals rm <id>")
+	}
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid goal id: %s", args[0])
+	}
+
+	fs := flag.NewFlagSet("hrs goals rm", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	fs.Parse(args[1:])
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	if err := DeleteGoal(db, id); err != nil {
+		return err
+	}
+	out, _ := json.Marshal(map[string]any{"deleted": id})
+	fmt.Println(string(out))
+	return nil
+}
+
+func cmdGoalsLink(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: hrs goals link <id> -e entry_ids")
+	}
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid goal id: %s", args[0])
+	}
+
+	fs := flag.NewFlagSet("hrs goals link", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	entryFlag := fs.String("e", "", "entry IDs to link (comma-separated)")
+	fs.Parse(args[1:])
+
+	if *entryFlag == "" {
+		return fmt.Errorf("required: -e entry_ids")
+	}
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	var entryIDs []int64
+	for _, s := range strings.Split(*entryFlag, ",") {
+		eid, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid entry id: %s", s)
+		}
+		entryIDs = append(entryIDs, eid)
+	}
+
+	if err := LinkGoalEntries(db, id, entryIDs); err != nil {
+		return err
+	}
+	out, _ := json.Marshal(map[string]any{"goal_id": id, "linked_entries": entryIDs})
+	fmt.Println(string(out))
 	return nil
 }
 

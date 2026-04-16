@@ -21,6 +21,14 @@ type Entry struct {
 	HoursEst float64  `json:"hours_est"`
 }
 
+type Goal struct {
+	ID        int64   `json:"id"`
+	Date      string  `json:"date"`
+	Text      string  `json:"text"`
+	Completed bool    `json:"completed"`
+	EntryIDs  []int64 `json:"entry_ids,omitempty"`
+}
+
 var (
 	dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 	timeRe = regexp.MustCompile(`^\d{2}:\d{2}$`)
@@ -75,6 +83,33 @@ func OpenDB(path string) (*sql.DB, error) {
 		return nil, err
 	}
 	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date)`)
+	if err != nil {
+		return nil, err
+	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS goals (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		date       TEXT NOT NULL,
+		text       TEXT NOT NULL,
+		completed  INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	)`)
+	if err != nil {
+		return nil, err
+	}
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_goals_date ON goals(date)`)
+	if err != nil {
+		return nil, err
+	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS goal_entries (
+		goal_id  INTEGER NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+		entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+		PRIMARY KEY (goal_id, entry_id)
+	)`)
+	if err != nil {
+		return nil, err
+	}
+	// Enable foreign keys
+	_, err = db.Exec(`PRAGMA foreign_keys = ON`)
 	return db, err
 }
 
@@ -201,6 +236,112 @@ func DeleteEntryByID(db *sql.DB, id int64) (string, error) {
 	}
 	_, err := db.Exec(`DELETE FROM entries WHERE id=?`, id)
 	return date, err
+}
+
+// --- Goals ---
+
+func InsertGoal(db *sql.DB, date, text string) (int64, error) {
+	if date == "" {
+		date = now().Format("2006-01-02")
+	}
+	if !dateRe.MatchString(date) {
+		return 0, fmt.Errorf("invalid date format: %q (expected YYYY-MM-DD)", date)
+	}
+	if strings.TrimSpace(text) == "" {
+		return 0, fmt.Errorf("goal text must be non-empty")
+	}
+	res, err := db.Exec(`INSERT INTO goals (date, text) VALUES (?, ?)`, date, text)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func GetGoals(db *sql.DB, date string) ([]Goal, error) {
+	rows, err := db.Query(
+		`SELECT id, date, text, completed FROM goals WHERE date=? ORDER BY id`, date,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Goal
+	for rows.Next() {
+		var g Goal
+		if err := rows.Scan(&g.ID, &g.Date, &g.Text, &g.Completed); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Load linked entry IDs
+	for i := range out {
+		out[i].EntryIDs, _ = getGoalEntryIDs(db, out[i].ID)
+	}
+	return out, nil
+}
+
+func getGoalEntryIDs(db *sql.DB, goalID int64) ([]int64, error) {
+	rows, err := db.Query(`SELECT entry_id FROM goal_entries WHERE goal_id=? ORDER BY entry_id`, goalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		rows.Scan(&id)
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func CompleteGoal(db *sql.DB, id int64, entryIDs []int64) error {
+	_, err := db.Exec(`UPDATE goals SET completed=1 WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	for _, eid := range entryIDs {
+		db.Exec(`INSERT OR IGNORE INTO goal_entries (goal_id, entry_id) VALUES (?, ?)`, id, eid)
+	}
+	return nil
+}
+
+func UncompleteGoal(db *sql.DB, id int64) error {
+	_, err := db.Exec(`UPDATE goals SET completed=0 WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`DELETE FROM goal_entries WHERE goal_id=?`, id)
+	return err
+}
+
+func DeleteGoal(db *sql.DB, id int64) error {
+	_, err := db.Exec(`DELETE FROM goals WHERE id=?`, id)
+	return err
+}
+
+func GetGoalByID(db *sql.DB, id int64) (*Goal, error) {
+	var g Goal
+	err := db.QueryRow(`SELECT id, date, text, completed FROM goals WHERE id=?`, id).
+		Scan(&g.ID, &g.Date, &g.Text, &g.Completed)
+	if err != nil {
+		return nil, err
+	}
+	g.EntryIDs, _ = getGoalEntryIDs(db, g.ID)
+	return &g, nil
+}
+
+func LinkGoalEntries(db *sql.DB, goalID int64, entryIDs []int64) error {
+	for _, eid := range entryIDs {
+		_, err := db.Exec(`INSERT OR IGNORE INTO goal_entries (goal_id, entry_id) VALUES (?, ?)`, goalID, eid)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func RenderMarkdown(entries []Entry) string {
