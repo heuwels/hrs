@@ -69,6 +69,11 @@ go build -o hrs .</code></pre>
     <h3>Browse with the TUI</h3>
     <pre><code>hrs tui</code></pre>
 
+    <h3>Set a goal</h3>
+    <pre><code>hrs goals add "implement oauth2 pkce"
+hrs goals done 1 -e 42</code></pre>
+    <p>See <a href="/docs/goals.html">Goals &amp; Strategies</a> for the full guide.</p>
+
     <h2>CLI reference</h2>
     <table>
       <tr><th>Command</th><th>Description</th></tr>
@@ -80,6 +85,8 @@ go build -o hrs .</code></pre>
       <tr><td><code>hrs edit &lt;id&gt; [flags]</code></td><td>Update an entry</td></tr>
       <tr><td><code>hrs rm &lt;id&gt;</code></td><td>Delete an entry</td></tr>
       <tr><td><code>hrs export</code></td><td>Export entries as JSON or CSV</td></tr>
+      <tr><td><code>hrs goals [action]</code></td><td>Manage daily goals</td></tr>
+      <tr><td><code>hrs strategy [action]</code></td><td>Manage strategic goals</td></tr>
       <tr><td><code>hrs categories</code></td><td>List all categories</td></tr>
       <tr><td><code>hrs migrate</code></td><td>Import existing markdown worklogs</td></tr>
       <tr><td><code>hrs version</code></td><td>Print version</td></tr>
@@ -98,7 +105,16 @@ hrs edit 42 -t "new title"                # update title
 hrs edit 42 -e 2 -c admin                # update hours and category
 
 # export
-hrs export --format csv --from 2026-04-01 --to 2026-04-30</code></pre>
+hrs export --format csv --from 2026-04-01 --to 2026-04-30
+
+# goals
+hrs goals add "implement oauth2 pkce"   # add a goal
+hrs goals                                # list today's goals
+hrs goals done 1 -e 41,42               # complete, link entries
+
+# strategies
+hrs strategy add -t "ship v2 auth"       # create strategy
+hrs strategy 1                           # view report</code></pre>
 
     <h2>Run as a service</h2>
     <h3>macOS (launchd)</h3>

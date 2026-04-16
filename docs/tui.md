@@ -18,10 +18,29 @@ vim-style keyboard navigation because we're not animals.
 | `h`/`l` | previous/next day   |
 | `g`/`G` | jump to top/bottom  |
 | `t`     | jump to today       |
+| `tab`   | switch entries/goals view |
 | `r`     | refresh             |
 | `d`     | delete entry        |
 | `e`     | show edit command   |
 | `q`     | quit                |
+
+## goals view
+
+press `tab` to switch to the goals view. goals show checkboxes, completion
+status, and linked entry counts.
+
+| key     | action              |
+|---------|---------------------|
+| `j`/`k` | scroll goals        |
+| `c`     | complete goal       |
+| `u`     | reopen goal         |
+| `d`     | delete goal         |
+| `l`     | enter linking mode  |
+
+### linking mode
+
+press `l` on a goal to enter linking mode. use `j`/`k` to scroll entries and
+`space` to toggle selection. press `enter` to confirm the link.
 
 ## hours caveat
 

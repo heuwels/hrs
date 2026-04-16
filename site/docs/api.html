@@ -95,15 +95,95 @@ GET /entries?from=2026-04-01&amp;to=2026-04-15&amp;category=dev</code></pre>
     },
     {"method": "PUT", "path": "/entries/{id}", "description": "..."},
     {"method": "GET", "path": "/entries", "description": "..."},
-    {"method": "DELETE", "path": "/entries/{id}", "description": "..."}
+    {"method": "DELETE", "path": "/entries/{id}", "description": "..."},
+    {"method": "POST", "path": "/goals", "description": "..."},
+    {"method": "GET", "path": "/goals", "description": "..."},
+    {"method": "POST", "path": "/strategies", "description": "..."},
+    ...
   ]
 }</code></pre>
+
+    <h2>POST /goals</h2>
+    <p>Create a daily goal.</p>
+    <pre><code>{
+  "text": "implement oauth2 pkce",
+  "date": "2026-04-14",
+  "strategy_id": 1
+}</code></pre>
+    <table>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>text</code></td><td>string</td><td>yes</td><td></td><td>Goal description</td></tr>
+      <tr><td><code>date</code></td><td>string</td><td>no</td><td>today</td><td>YYYY-MM-DD</td></tr>
+      <tr><td><code>strategy_id</code></td><td>number</td><td>no</td><td></td><td>Link to a strategic goal</td></tr>
+    </table>
+    <p>Returns <code>201</code>:</p>
+    <pre><code>{"id": 1, "date": "2026-04-14"}</code></pre>
+
+    <h2>GET /goals</h2>
+    <p>List goals for a date.</p>
+    <pre><code>GET /goals?date=2026-04-14</code></pre>
+    <p>Returns <code>200</code> with a JSON array. Each goal includes <code>entry_ids</code> if any entries are linked.</p>
+
+    <h2>PUT /goals/{id}/done</h2>
+    <p>Mark a goal complete. Optionally link entries:</p>
+    <pre><code>{"entry_ids": [41, 42]}</code></pre>
+
+    <h2>PUT /goals/{id}/undo</h2>
+    <p>Reopen a completed goal.</p>
+
+    <h2>POST /goals/{id}/link</h2>
+    <p>Link entries to a goal:</p>
+    <pre><code>{"entry_ids": [41, 42]}</code></pre>
+
+    <h2>DELETE /goals/{id}</h2>
+    <p>Delete a goal.</p>
+
+    <hr>
+
+    <h2>POST /strategies</h2>
+    <p>Create a strategic goal.</p>
+    <pre><code>{
+  "title": "ship v2 auth",
+  "description": "oauth2, token refresh, integration tests"
+}</code></pre>
+    <table>
+      <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+      <tr><td><code>title</code></td><td>string</td><td>yes</td><td>Strategic goal title</td></tr>
+      <tr><td><code>description</code></td><td>string</td><td>no</td><td>Longer description</td></tr>
+    </table>
+    <p>Returns <code>201</code>:</p>
+    <pre><code>{"id": 1, "title": "ship v2 auth"}</code></pre>
+
+    <h2>GET /strategies</h2>
+    <p>List strategies. Filter by status:</p>
+    <pre><code>GET /strategies?status=active</code></pre>
+    <p>Status values: <code>active</code>, <code>completed</code>, <code>archived</code>. Omit for all.</p>
+
+    <h2>GET /strategies/{id}</h2>
+    <p>Strategy report with aggregated metrics:</p>
+    <pre><code>{
+  "id": 1,
+  "title": "ship v2 auth",
+  "status": "active",
+  "goals_done": 2,
+  "goals_total": 5,
+  "total_hours": 12.5
+}</code></pre>
+
+    <h2>PUT /strategies/{id}</h2>
+    <p>Update strategy status:</p>
+    <pre><code>{"status": "completed"}</code></pre>
+
+    <h2>DELETE /strategies/{id}</h2>
+    <p>Delete a strategy. Unlinks goals but does not delete them.</p>
+
+    <hr>
 
     <h2>GET /health</h2>
     <pre><code>{"status": "ok"}</code></pre>
 
     <div class="doc-nav">
-      <a href="/docs/getting-started.html">&larr; Getting Started</a>
+      <a href="/docs/goals.html">&larr; Goals &amp; Strategies</a>
       <a href="/docs/agent-integration.html">Agent Integration &rarr;</a>
     </div>
   </div>

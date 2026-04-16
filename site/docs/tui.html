@@ -38,10 +38,25 @@
       <tr><td><code>g</code> / <code>G</code></td><td>Jump to top / bottom</td></tr>
       <tr><td><code>t</code></td><td>Jump to today</td></tr>
       <tr><td><code>r</code></td><td>Refresh</td></tr>
+      <tr><td><code>tab</code></td><td>Switch entries / goals view</td></tr>
       <tr><td><code>d</code></td><td>Delete selected entry</td></tr>
       <tr><td><code>e</code></td><td>Show edit command for selected entry</td></tr>
       <tr><td><code>q</code></td><td>Quit</td></tr>
     </table>
+
+    <h2>Goals view</h2>
+    <p>Press <code>tab</code> to switch to the goals view. Goals show checkboxes, completion status, and linked entry counts.</p>
+    <table>
+      <tr><th>Key</th><th>Action</th></tr>
+      <tr><td><code>j</code> / <code>k</code></td><td>Scroll goals</td></tr>
+      <tr><td><code>c</code></td><td>Complete goal</td></tr>
+      <tr><td><code>u</code></td><td>Reopen goal</td></tr>
+      <tr><td><code>d</code></td><td>Delete goal</td></tr>
+      <tr><td><code>l</code></td><td>Enter linking mode</td></tr>
+    </table>
+
+    <h3>Linking mode</h3>
+    <p>Press <code>l</code> on a goal to enter linking mode. Use <code>j</code>/<code>k</code> to scroll entries and <code>space</code> to toggle selection. Press <code>enter</code> to confirm the link.</p>
 
     <h2 id="hours-caveat">Hours caveat</h2>
     <p>The <code>hours_est</code> field asks the AI to estimate how long the work would take a competent developer without AI assistance. This is useful for understanding throughput, but take it with a grain of salt.</p>
@@ -49,7 +64,7 @@
 
     <div class="doc-nav">
       <a href="/docs/agent-integration.html">&larr; Agent Integration</a>
-      <span></span>
+      <a href="/docs/goals.html">Goals &amp; Strategies &rarr;</a>
     </div>
   </div>
 </section>

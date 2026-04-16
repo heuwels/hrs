@@ -102,6 +102,128 @@ self-discover the api without hardcoded instructions in their prompts.
 }
 ```
 
+## POST /goals
+
+create a daily goal.
+
+```json
+{
+  "text": "implement oauth2 pkce",
+  "date": "2026-04-14",
+  "strategy_id": 1
+}
+```
+
+| field       | type   | required | default | description                    |
+|-------------|--------|----------|---------|--------------------------------|
+| text        | string | yes      |         | goal description               |
+| date        | string | no       | today   | YYYY-MM-DD                     |
+| strategy_id | number | no       |         | link to a strategic goal       |
+
+returns `201`:
+
+```json
+{"id": 1, "date": "2026-04-14"}
+```
+
+## GET /goals
+
+list goals for a date.
+
+```bash
+GET /goals?date=2026-04-14
+```
+
+returns `200` with a json array. each goal includes `entry_ids` if any entries
+are linked.
+
+## PUT /goals/{id}/done
+
+mark a goal complete. optionally link entries.
+
+```json
+{"entry_ids": [41, 42]}
+```
+
+## PUT /goals/{id}/undo
+
+reopen a completed goal.
+
+## POST /goals/{id}/link
+
+link entries to a goal.
+
+```json
+{"entry_ids": [41, 42]}
+```
+
+## DELETE /goals/{id}
+
+delete a goal.
+
+---
+
+## POST /strategies
+
+create a strategic goal.
+
+```json
+{
+  "title": "ship v2 auth",
+  "description": "oauth2, token refresh, integration tests"
+}
+```
+
+| field       | type   | required | description                    |
+|-------------|--------|----------|--------------------------------|
+| title       | string | yes      | strategic goal title           |
+| description | string | no       | longer description             |
+
+returns `201`:
+
+```json
+{"id": 1, "title": "ship v2 auth"}
+```
+
+## GET /strategies
+
+list strategies. filter by status.
+
+```bash
+GET /strategies?status=active
+```
+
+status values: `active`, `completed`, `archived`. omit for all.
+
+## GET /strategies/{id}
+
+strategy report with aggregated metrics.
+
+```json
+{
+  "id": 1,
+  "title": "ship v2 auth",
+  "status": "active",
+  "goals_done": 2,
+  "goals_total": 5,
+  "total_hours": 12.5
+}
+```
+
+## PUT /strategies/{id}
+
+update strategy status.
+
+```json
+{"status": "completed"}
+```
+
+## DELETE /strategies/{id}
+
+delete a strategy. unlinks goals but does not delete them.
+
+---
+
 ## GET /health
 
 ```json
@@ -110,4 +232,4 @@ self-discover the api without hardcoded instructions in their prompts.
 
 ---
 
-[agent integration →](/agent-integration)
+[goals & strategies →](/goals)

@@ -18,6 +18,7 @@ a tiny http server backed by sqlite that ai agents can post work entries
 to from any directory. renders markdown for humans.
 
 - [getting started](/getting-started)
+- [goals & strategies](/goals)
 - [api reference](/api)
 - [agent integration](/agent-integration)
 - [tui explorer](/tui)

@@ -86,6 +86,11 @@
         <p>Filter by date range and category. Export as JSON or CSV. Pipe <code>hrs ls --format json</code> into anything.</p>
       </div>
       <div class="feature">
+        <div class="feature-icon">&#x1F3AF;</div>
+        <h3>Goals &amp; strategies</h3>
+        <p>Set daily goals, link them to entries, and roll up into strategic objectives. Track progress with <code>hrs strategy report</code>.</p>
+      </div>
+      <div class="feature">
         <div class="feature-icon">&#x1F4E1;</div>
         <h3>Optional HTTP server</h3>
         <p>Run <code>hrs serve</code> for agents that can't shell out, browser extensions, or webhook integrations. The CLI auto-detects it.</p>
@@ -115,6 +120,10 @@ hrs log -c dev -t "built auth flow" -b "oauth2 pkce;token refresh;tests" -e 3
 <span class="comment"># See what happened today</span>
 hrs ls
 
+<span class="comment"># Set goals and track progress</span>
+hrs goals add "implement oauth2 pkce"
+hrs goals done 1 -e 42
+
 <span class="comment"># Browse interactively</span>
 hrs tui</code></pre>
 
@@ -133,6 +142,8 @@ Log proactively. Don't wait to be asked.</code></pre>
   <div class="container">
     <nav class="footer-nav">
       <a href="/docs/">Docs</a>
+      <span class="footer-sep">&middot;</span>
+      <a href="/docs/goals.html">Goals</a>
       <span class="footer-sep">&middot;</span>
       <a href="/docs/api.html">API</a>
       <span class="footer-sep">&middot;</span>

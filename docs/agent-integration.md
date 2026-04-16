@@ -124,6 +124,34 @@ curl -s -X POST http://localhost:9746/entries \
   -d '{"category":"dev","title":"...","bullets":["..."],"hours_est":1}'
 ```
 
+## goals for agents
+
+agents can also set and complete daily goals. this pairs well with work logging.
+set a goal before starting, log entries as you work, then mark the goal done and
+link the entries.
+
+```bash
+# set a goal
+hrs goals add "implement oauth2 pkce"
+
+# ... do the work, log entries ...
+
+# complete and link entries
+hrs goals done 1 -e 41,42
+```
+
+via HTTP:
+
+```bash
+# create a goal
+curl -s -X POST http://localhost:9746/goals -d '{"text": "implement oauth2 pkce"}'
+
+# complete with linked entries
+curl -s -X PUT http://localhost:9746/goals/1/done -d '{"entry_ids": [41, 42]}'
+```
+
+see [goals & strategies](/goals) for the full guide.
+
 ## tips
 
 - **log during work, not after**: agents forget context fast

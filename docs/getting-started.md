@@ -88,6 +88,15 @@ hrs tui
 
 vim keys: `j/k` scroll entries, `h/l` switch days, `d` delete, `t` jump to today.
 
+### set a goal
+
+```bash
+hrs goals add "implement oauth2 pkce"
+hrs goals done 1 -e 42
+```
+
+see [goals & strategies](/goals) for the full guide.
+
 ---
 
 ## cli reference
@@ -102,6 +111,8 @@ vim keys: `j/k` scroll entries, `h/l` switch days, `d` delete, `t` jump to today
 | `hrs edit <id> [flags]`  | update an entry                      |
 | `hrs rm <id>`            | delete an entry                      |
 | `hrs export`             | export entries as json or csv        |
+| `hrs goals [action]`     | manage daily goals                   |
+| `hrs strategy [action]`  | manage strategic goals                |
 | `hrs categories`         | list all categories                  |
 | `hrs migrate`            | import existing markdown worklogs    |
 | `hrs version`            | print version                        |
