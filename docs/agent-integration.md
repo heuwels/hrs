@@ -124,23 +124,42 @@ curl -s -X POST http://localhost:9746/entries \
   -d '{"category":"dev","title":"...","bullets":["..."],"hours_est":1}'
 ```
 
-## goals for agents
+## goals & strategies for agents
 
-agents can also set and complete daily goals. this pairs well with work logging.
-set a goal before starting, log entries as you work, then mark the goal done and
-link the entries.
+agents can also set daily goals, link them to work entries, and track progress
+against strategic objectives. this is optional. if you just want work logging,
+the instructions above are enough.
+
+### the workflow
+
+1. check for active strategies: `hrs strategy`
+2. set a daily goal before starting work: `hrs goals add "..."`
+3. log entries as you work: `hrs log -c dev -t "..." -b "..." -e 2`
+4. mark the goal done and link entries: `hrs goals done <id> -e <entry_ids>`
+5. check strategy progress: `hrs strategy <id>`
+
+### cli quick reference
 
 ```bash
-# set a goal
-hrs goals add "implement oauth2 pkce"
+# goals
+hrs goals                        # list today's goals
+hrs goals add "goal text"        # add a goal
+hrs goals done <id>              # mark complete
+hrs goals done <id> -e 41,42    # complete and link entries
+hrs goals link <id> -e 41,42    # link entries without completing
+hrs goals undo <id>              # reopen
+hrs goals rm <id>                # delete
 
-# ... do the work, log entries ...
-
-# complete and link entries
-hrs goals done 1 -e 41,42
+# strategies
+hrs strategy                     # list all strategies
+hrs strategy <id>                # view report (goals done, total hours)
+hrs strategy add -t "title"      # create
+hrs strategy done <id>           # mark completed
+hrs strategy archive <id>        # pause
+hrs strategy reopen <id>         # reactivate
 ```
 
-via HTTP:
+### via HTTP
 
 ```bash
 # create a goal
@@ -148,7 +167,43 @@ curl -s -X POST http://localhost:9746/goals -d '{"text": "implement oauth2 pkce"
 
 # complete with linked entries
 curl -s -X PUT http://localhost:9746/goals/1/done -d '{"entry_ids": [41, 42]}'
+
+# create a strategy
+curl -s -X POST http://localhost:9746/strategies -d '{"title": "ship v2 auth"}'
+
+# check strategy progress
+curl -s http://localhost:9746/strategies/1
 ```
+
+### example CLAUDE.md snippet
+
+add this alongside your work logging instructions:
+
+````markdown
+## goals & strategies (optional)
+
+before starting a task, check for active strategies and today's goals:
+
+```bash
+hrs strategy
+hrs goals
+```
+
+if the current task aligns with a strategy, set a goal for it:
+
+```bash
+hrs goals add "description of what you're about to do"
+```
+
+after completing the work and logging entries, mark the goal done and
+link the entry IDs:
+
+```bash
+hrs goals done <goal_id> -e <entry_id1>,<entry_id2>
+```
+
+don't create strategies. just work within existing ones.
+````
 
 see [goals & strategies](/goals) for the full guide.
 
