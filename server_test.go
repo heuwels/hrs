@@ -27,6 +27,17 @@ func testMux(s *Server) *http.ServeMux {
 	mux.HandleFunc("POST /entries", s.CreateEntry)
 	mux.HandleFunc("PUT /entries/{id}", s.UpdateEntryHandler)
 	mux.HandleFunc("DELETE /entries/{id}", s.DeleteEntry)
+	mux.HandleFunc("GET /goals", s.ListGoals)
+	mux.HandleFunc("POST /goals", s.CreateGoal)
+	mux.HandleFunc("PUT /goals/{id}/done", s.CompleteGoalHandler)
+	mux.HandleFunc("PUT /goals/{id}/undo", s.UncompleteGoalHandler)
+	mux.HandleFunc("POST /goals/{id}/link", s.LinkGoalEntriesHandler)
+	mux.HandleFunc("DELETE /goals/{id}", s.DeleteGoalHandler)
+	mux.HandleFunc("GET /strategies", s.ListStrategies)
+	mux.HandleFunc("POST /strategies", s.CreateStrategy)
+	mux.HandleFunc("GET /strategies/{id}", s.GetStrategyReportHandler)
+	mux.HandleFunc("PUT /strategies/{id}", s.UpdateStrategyStatusHandler)
+	mux.HandleFunc("DELETE /strategies/{id}", s.DeleteStrategyHandler)
 	return mux
 }
 
@@ -282,6 +293,268 @@ func TestSchema(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("schema missing %q", want)
 		}
+	}
+}
+
+func TestGoalsCRUD(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	// Create two entries to link later
+	for _, body := range []string{
+		`{"date":"2026-04-16","time":"09:00","category":"dev","title":"Entry A","bullets":["a"],"hours_est":1}`,
+		`{"date":"2026-04-16","time":"10:00","category":"dev","title":"Entry B","bullets":["b"],"hours_est":2}`,
+	} {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("POST", "/entries", strings.NewReader(body)))
+		if w.Code != http.StatusCreated {
+			t.Fatalf("create entry: %d %s", w.Code, w.Body.String())
+		}
+	}
+
+	// Create a goal
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/goals",
+		strings.NewReader(`{"date":"2026-04-16","text":"Ship goals feature"}`)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create goal: %d %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "Ship goals feature") {
+		t.Fatalf("missing text: %s", w.Body.String())
+	}
+
+	// List goals
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/goals?date=2026-04-16", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("list goals: %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "Ship goals feature") {
+		t.Fatalf("goal not in list: %s", w.Body.String())
+	}
+
+	// Complete the goal, linking to the two real entries (IDs 1 and 2)
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("PUT", "/goals/1/done",
+		strings.NewReader(`{"entry_ids":[1,2]}`)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("complete goal: %d %s", w.Code, w.Body.String())
+	}
+
+	// Verify completed with entry links
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/goals?date=2026-04-16", nil))
+	resp := w.Body.String()
+	if !strings.Contains(resp, `"completed":true`) {
+		t.Fatalf("goal not completed: %s", resp)
+	}
+	if !strings.Contains(resp, `"entry_ids":[1,2]`) {
+		t.Fatalf("entry_ids not linked: %s", resp)
+	}
+
+	// Undo completion
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("PUT", "/goals/1/undo", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("undo goal: %d %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/goals?date=2026-04-16", nil))
+	if strings.Contains(w.Body.String(), `"completed":true`) {
+		t.Fatalf("goal still completed after undo: %s", w.Body.String())
+	}
+
+	// Delete the goal
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("DELETE", "/goals/1", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("delete goal: %d", w.Code)
+	}
+
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/goals?date=2026-04-16", nil))
+	if strings.Contains(w.Body.String(), "Ship goals feature") {
+		t.Fatal("goal still exists after delete")
+	}
+}
+
+func TestGoalValidation(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	for _, tc := range []struct {
+		name, body string
+	}{
+		{"no text", `{"date":"2026-04-16"}`},
+		{"empty text", `{"date":"2026-04-16","text":""}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, httptest.NewRequest("POST", "/goals", strings.NewReader(tc.body)))
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("got %d want 400", w.Code)
+			}
+		})
+	}
+}
+
+func TestGoalLinkEntries(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	// Create goal and entry
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/goals",
+		strings.NewReader(`{"date":"2026-04-16","text":"Test linking"}`)))
+
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/entries",
+		strings.NewReader(`{"date":"2026-04-16","time":"10:00","category":"dev","title":"Did work","bullets":["stuff"],"hours_est":1}`)))
+
+	// Link entry to goal
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/goals/1/link",
+		strings.NewReader(`{"entry_ids":[1]}`)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("link: %d %s", w.Code, w.Body.String())
+	}
+
+	// Verify link shows up
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/goals?date=2026-04-16", nil))
+	if !strings.Contains(w.Body.String(), `"entry_ids":[1]`) {
+		t.Fatalf("entry not linked: %s", w.Body.String())
+	}
+}
+
+func TestGoalDefaultDate(t *testing.T) {
+	now = func() time.Time { return time.Date(2026, 4, 16, 9, 0, 0, 0, time.UTC) }
+	defer func() { now = time.Now }()
+
+	s := testServer(t)
+	mux := testMux(s)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/goals",
+		strings.NewReader(`{"text":"Default date goal"}`)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/goals?date=2026-04-16", nil))
+	if !strings.Contains(w.Body.String(), "Default date goal") {
+		t.Fatalf("goal not found on default date: %s", w.Body.String())
+	}
+}
+
+func TestStrategyCRUD(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	// Create a strategy
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/strategies",
+		strings.NewReader(`{"title":"Ship v2.0","description":"Major release"}`)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create strategy: %d %s", w.Code, w.Body.String())
+	}
+
+	// List strategies
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/strategies", nil))
+	if !strings.Contains(w.Body.String(), "Ship v2.0") {
+		t.Fatalf("strategy not in list: %s", w.Body.String())
+	}
+
+	// Complete the strategy
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("PUT", "/strategies/1",
+		strings.NewReader(`{"status":"completed"}`)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("complete strategy: %d %s", w.Code, w.Body.String())
+	}
+
+	// Filter by status
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/strategies?status=active", nil))
+	if strings.Contains(w.Body.String(), "Ship v2.0") {
+		t.Fatalf("completed strategy in active list: %s", w.Body.String())
+	}
+
+	// Delete
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("DELETE", "/strategies/1", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("delete strategy: %d", w.Code)
+	}
+}
+
+func TestStrategyReport(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	// Create strategy
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/strategies",
+		strings.NewReader(`{"title":"Q2 Goals"}`)))
+
+	// Create entry
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/entries",
+		strings.NewReader(`{"date":"2026-04-16","time":"10:00","category":"dev","title":"Work","bullets":["stuff"],"hours_est":3}`)))
+
+	// Create goal linked to strategy
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/goals",
+		strings.NewReader(`{"date":"2026-04-16","text":"Finish API","strategy_id":1}`)))
+
+	// Complete goal with entry link
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("PUT", "/goals/1/done",
+		strings.NewReader(`{"entry_ids":[1]}`)))
+
+	// Get report
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/strategies/1", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("report: %d %s", w.Code, w.Body.String())
+	}
+	resp := w.Body.String()
+	if !strings.Contains(resp, `"goals_done":1`) {
+		t.Fatalf("goals_done not 1: %s", resp)
+	}
+	if !strings.Contains(resp, `"goals_total":1`) {
+		t.Fatalf("goals_total not 1: %s", resp)
+	}
+	if !strings.Contains(resp, `"total_hours":3`) {
+		t.Fatalf("total_hours not 3: %s", resp)
+	}
+}
+
+func TestGoalWithStrategy(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	// Create strategy
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/strategies",
+		strings.NewReader(`{"title":"Ship it"}`)))
+
+	// Create goal linked to strategy
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/goals",
+		strings.NewReader(`{"date":"2026-04-16","text":"Deploy","strategy_id":1}`)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create goal: %d %s", w.Code, w.Body.String())
+	}
+
+	// Verify goal has strategy_id
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/goals?date=2026-04-16", nil))
+	if !strings.Contains(w.Body.String(), `"strategy_id":1`) {
+		t.Fatalf("strategy_id missing: %s", w.Body.String())
 	}
 }
 

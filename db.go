@@ -21,6 +21,31 @@ type Entry struct {
 	HoursEst float64  `json:"hours_est"`
 }
 
+type Goal struct {
+	ID         int64   `json:"id"`
+	Date       string  `json:"date"`
+	Text       string  `json:"text"`
+	Completed  bool    `json:"completed"`
+	EntryIDs   []int64 `json:"entry_ids,omitempty"`
+	StrategyID *int64  `json:"strategy_id,omitempty"`
+}
+
+type Strategy struct {
+	ID          int64   `json:"id"`
+	Title       string  `json:"title"`
+	Description string  `json:"description,omitempty"`
+	Status      string  `json:"status"`
+	CreatedAt   string  `json:"created_at"`
+	CompletedAt *string `json:"completed_at,omitempty"`
+}
+
+type StrategyReport struct {
+	Strategy
+	GoalsDone  int     `json:"goals_done"`
+	GoalsTotal int     `json:"goals_total"`
+	TotalHours float64 `json:"total_hours"`
+}
+
 var (
 	dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 	timeRe = regexp.MustCompile(`^\d{2}:\d{2}$`)
@@ -75,6 +100,46 @@ func OpenDB(path string) (*sql.DB, error) {
 		return nil, err
 	}
 	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date)`)
+	if err != nil {
+		return nil, err
+	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS goals (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		date       TEXT NOT NULL,
+		text       TEXT NOT NULL,
+		completed  INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	)`)
+	if err != nil {
+		return nil, err
+	}
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_goals_date ON goals(date)`)
+	if err != nil {
+		return nil, err
+	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS goal_entries (
+		goal_id  INTEGER NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+		entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+		PRIMARY KEY (goal_id, entry_id)
+	)`)
+	if err != nil {
+		return nil, err
+	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS strategies (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		title        TEXT NOT NULL,
+		description  TEXT NOT NULL DEFAULT '',
+		status       TEXT NOT NULL DEFAULT 'active',
+		created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+		completed_at TEXT
+	)`)
+	if err != nil {
+		return nil, err
+	}
+	// Add strategy_id to goals (safe to call repeatedly -- ignore "duplicate column" error)
+	db.Exec(`ALTER TABLE goals ADD COLUMN strategy_id INTEGER REFERENCES strategies(id)`)
+	// Enable foreign keys
+	_, err = db.Exec(`PRAGMA foreign_keys = ON`)
 	return db, err
 }
 
@@ -201,6 +266,230 @@ func DeleteEntryByID(db *sql.DB, id int64) (string, error) {
 	}
 	_, err := db.Exec(`DELETE FROM entries WHERE id=?`, id)
 	return date, err
+}
+
+// --- Goals ---
+
+func InsertGoal(db *sql.DB, date, text string, strategyID *int64) (int64, error) {
+	if date == "" {
+		date = now().Format("2006-01-02")
+	}
+	if !dateRe.MatchString(date) {
+		return 0, fmt.Errorf("invalid date format: %q (expected YYYY-MM-DD)", date)
+	}
+	if strings.TrimSpace(text) == "" {
+		return 0, fmt.Errorf("goal text must be non-empty")
+	}
+	res, err := db.Exec(`INSERT INTO goals (date, text, strategy_id) VALUES (?, ?, ?)`, date, text, strategyID)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func GetGoals(db *sql.DB, date string) ([]Goal, error) {
+	rows, err := db.Query(
+		`SELECT id, date, text, completed, strategy_id FROM goals WHERE date=? ORDER BY id`, date,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Goal
+	for rows.Next() {
+		var g Goal
+		if err := rows.Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Load linked entry IDs
+	for i := range out {
+		out[i].EntryIDs, _ = getGoalEntryIDs(db, out[i].ID)
+	}
+	return out, nil
+}
+
+func getGoalEntryIDs(db *sql.DB, goalID int64) ([]int64, error) {
+	rows, err := db.Query(`SELECT entry_id FROM goal_entries WHERE goal_id=? ORDER BY entry_id`, goalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		rows.Scan(&id)
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func CompleteGoal(db *sql.DB, id int64, entryIDs []int64) error {
+	_, err := db.Exec(`UPDATE goals SET completed=1 WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	for _, eid := range entryIDs {
+		db.Exec(`INSERT OR IGNORE INTO goal_entries (goal_id, entry_id) VALUES (?, ?)`, id, eid)
+	}
+	return nil
+}
+
+func UncompleteGoal(db *sql.DB, id int64) error {
+	_, err := db.Exec(`UPDATE goals SET completed=0 WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`DELETE FROM goal_entries WHERE goal_id=?`, id)
+	return err
+}
+
+func DeleteGoal(db *sql.DB, id int64) error {
+	_, err := db.Exec(`DELETE FROM goals WHERE id=?`, id)
+	return err
+}
+
+func GetGoalByID(db *sql.DB, id int64) (*Goal, error) {
+	var g Goal
+	err := db.QueryRow(`SELECT id, date, text, completed, strategy_id FROM goals WHERE id=?`, id).
+		Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID)
+	if err != nil {
+		return nil, err
+	}
+	g.EntryIDs, _ = getGoalEntryIDs(db, g.ID)
+	return &g, nil
+}
+
+func LinkGoalEntries(db *sql.DB, goalID int64, entryIDs []int64) error {
+	for _, eid := range entryIDs {
+		_, err := db.Exec(`INSERT OR IGNORE INTO goal_entries (goal_id, entry_id) VALUES (?, ?)`, goalID, eid)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// --- Strategies ---
+
+func InsertStrategy(db *sql.DB, title, description string) (int64, error) {
+	if strings.TrimSpace(title) == "" {
+		return 0, fmt.Errorf("strategy title must be non-empty")
+	}
+	res, err := db.Exec(`INSERT INTO strategies (title, description) VALUES (?, ?)`, title, description)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func GetStrategies(db *sql.DB, status string) ([]Strategy, error) {
+	q := `SELECT id, title, description, status, created_at, completed_at FROM strategies`
+	var args []any
+	if status != "" {
+		q += ` WHERE status=?`
+		args = append(args, status)
+	}
+	q += ` ORDER BY id`
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Strategy
+	for rows.Next() {
+		var s Strategy
+		if err := rows.Scan(&s.ID, &s.Title, &s.Description, &s.Status, &s.CreatedAt, &s.CompletedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+func GetStrategyByID(db *sql.DB, id int64) (*Strategy, error) {
+	var s Strategy
+	err := db.QueryRow(
+		`SELECT id, title, description, status, created_at, completed_at FROM strategies WHERE id=?`, id,
+	).Scan(&s.ID, &s.Title, &s.Description, &s.Status, &s.CreatedAt, &s.CompletedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+func UpdateStrategyStatus(db *sql.DB, id int64, status string) error {
+	var completedAt any
+	if status == "completed" {
+		t := now().Format("2006-01-02T15:04:05")
+		completedAt = t
+	}
+	_, err := db.Exec(`UPDATE strategies SET status=?, completed_at=? WHERE id=?`, status, completedAt, id)
+	return err
+}
+
+func UpdateStrategy(db *sql.DB, id int64, title, description string) error {
+	_, err := db.Exec(`UPDATE strategies SET title=?, description=? WHERE id=?`, title, description, id)
+	return err
+}
+
+func DeleteStrategy(db *sql.DB, id int64) error {
+	// Unlink goals first (set strategy_id to NULL)
+	db.Exec(`UPDATE goals SET strategy_id=NULL WHERE strategy_id=?`, id)
+	_, err := db.Exec(`DELETE FROM strategies WHERE id=?`, id)
+	return err
+}
+
+func GetStrategyReport(db *sql.DB, id int64) (*StrategyReport, error) {
+	s, err := GetStrategyByID(db, id)
+	if err != nil {
+		return nil, err
+	}
+	r := &StrategyReport{Strategy: *s}
+
+	// Count goals
+	db.QueryRow(`SELECT COUNT(*) FROM goals WHERE strategy_id=?`, id).Scan(&r.GoalsTotal)
+	db.QueryRow(`SELECT COUNT(*) FROM goals WHERE strategy_id=? AND completed=1`, id).Scan(&r.GoalsDone)
+
+	// Sum hours from linked entries (entries linked to goals linked to this strategy)
+	db.QueryRow(`
+		SELECT COALESCE(SUM(e.hours_est), 0)
+		FROM entries e
+		JOIN goal_entries ge ON ge.entry_id = e.id
+		JOIN goals g ON g.id = ge.goal_id
+		WHERE g.strategy_id = ?
+	`, id).Scan(&r.TotalHours)
+
+	return r, nil
+}
+
+func GetStrategyGoals(db *sql.DB, strategyID int64) ([]Goal, error) {
+	rows, err := db.Query(
+		`SELECT id, date, text, completed, strategy_id FROM goals WHERE strategy_id=? ORDER BY date DESC, id`, strategyID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Goal
+	for rows.Next() {
+		var g Goal
+		if err := rows.Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].EntryIDs, _ = getGoalEntryIDs(db, out[i].ID)
+	}
+	return out, nil
 }
 
 func RenderMarkdown(entries []Entry) string {

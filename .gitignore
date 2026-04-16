@@ -4,3 +4,5 @@ hrs
 !README.md
 !CONTRIBUTING.md
 !SECURITY.md
+.DS_Store
+.wrangler/
