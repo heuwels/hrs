@@ -4,11 +4,11 @@
 
 ---
 
-hrs has a two-layer goal system: **daily goals** for what you want to get done today,
-and **strategies** for longer-running initiatives that span days or weeks.
+two layers: **daily goals** for what you want done today, and **strategies**
+for things that span days or weeks.
 
-daily goals can link to entries (work you've logged) and to strategies (the bigger
-picture). hours roll up from entries through goals into strategy reports.
+goals link to entries (work you've logged) and to strategies. hours roll up
+from entries through goals into strategy reports.
 
 ```
 strategy: "ship v2 auth"
@@ -26,9 +26,10 @@ strategy: "ship v2 auth"
 ```bash
 hrs goals add "implement oauth2 pkce"
 hrs goals add "review deployment docs" -d 2026-04-18
+hrs goals add "write migration scripts" -s 1
 ```
 
-`-d` sets the date. defaults to today.
+`-d` sets the date (defaults to today). `-s` links the goal to a strategy.
 
 ### list goals
 
@@ -64,8 +65,8 @@ hrs goals rm 1               # delete a goal
 
 ## strategies
 
-strategies are long-running objectives. daily goals link up to them, and hrs
-aggregates progress across all linked goals.
+strategies span multiple days. daily goals link up to them, and hrs
+rolls up progress across all linked goals.
 
 ### create a strategy
 
@@ -95,8 +96,8 @@ hrs strategy report 1                # explicit
 hrs strategy report 1 --format json  # machine-readable
 ```
 
-the report shows goal completion (e.g. 3/5 done), total hours aggregated from
-linked entries, and a list of all linked goals.
+the report shows goal completion (e.g. 3/5 done), total hours rolled up
+from linked entries, and a list of all goals.
 
 ### manage lifecycle
 
@@ -124,9 +125,9 @@ the typical workflow:
 # 1. create strategy
 hrs strategy add -t "migrate to postgres"
 
-# 2. set today's goals (strategy_id from step 1)
-hrs goals add "schema migration scripts"
-hrs goals add "update connection pooling"
+# 2. set today's goals, linked to the strategy (-s flag)
+hrs goals add "schema migration scripts" -s 1
+hrs goals add "update connection pooling" -s 1
 
 # 3. log work as you go
 hrs log -c dev -t "wrote migration scripts" -b "up/down for users table;seed data" -e 2
@@ -138,8 +139,7 @@ hrs goals done 1 -e 50
 hrs strategy 1
 ```
 
-note: linking goals to strategies is done via the API (pass `strategy_id` when
-creating a goal via HTTP). the CLI `goals add` command creates standalone goals.
+link goals to a strategy with `-s` on the CLI or `strategy_id` via HTTP.
 
 ---
 

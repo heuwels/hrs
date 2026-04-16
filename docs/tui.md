@@ -32,15 +32,13 @@ status, and linked entry counts.
 | key     | action              |
 |---------|---------------------|
 | `j`/`k` | scroll goals        |
-| `c`     | complete goal       |
-| `u`     | reopen goal         |
+| `x`     | toggle done/undone  |
 | `d`     | delete goal         |
-| `l`     | enter linking mode  |
+| `g`/`G` | jump to top/bottom  |
 
-### linking mode
-
-press `l` on a goal to enter linking mode. use `j`/`k` to scroll entries and
-`space` to toggle selection. press `enter` to confirm the link.
+pressing `x` on an incomplete goal with entries present drops you into
+linking mode: `j`/`k` to scroll entries, `space` to toggle selection,
+`enter` to confirm, `esc` to skip and just complete the goal.
 
 ## hours caveat
 

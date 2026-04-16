@@ -115,6 +115,7 @@ see [goals & strategies](/goals) for the full guide.
 | `hrs strategy [action]`  | manage strategic goals                |
 | `hrs categories`         | list all categories                  |
 | `hrs migrate`            | import existing markdown worklogs    |
+| `hrs docs`               | serve the documentation site         |
 | `hrs version`            | print version                        |
 
 ### hrs ls
@@ -180,4 +181,4 @@ cp completions/hrs.fish ~/.config/fish/completions/
 
 ---
 
-[api reference →](/api)
+[goals & strategies →](/goals)

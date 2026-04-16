@@ -126,9 +126,9 @@ curl -s -X POST http://localhost:9746/entries \
 
 ## goals & strategies for agents
 
-agents can also set daily goals, link them to work entries, and track progress
-against strategic objectives. this is optional. if you just want work logging,
-the instructions above are enough.
+agents can also set daily goals, link them to entries, and work toward
+strategies. this is optional. if you just want work logging, the
+instructions above are enough.
 
 ### the workflow
 
@@ -144,6 +144,7 @@ the instructions above are enough.
 # goals
 hrs goals                        # list today's goals
 hrs goals add "goal text"        # add a goal
+hrs goals add "text" -s 1        # add a goal linked to strategy #1
 hrs goals done <id>              # mark complete
 hrs goals done <id> -e 41,42    # complete and link entries
 hrs goals link <id> -e 41,42    # link entries without completing

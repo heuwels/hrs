@@ -27,8 +27,8 @@
 <section class="docs-body">
   <div class="container">
 
-    <p>hrs has a two-layer goal system: <strong>daily goals</strong> for what you want to get done today, and <strong>strategies</strong> for longer-running initiatives that span days or weeks.</p>
-    <p>Daily goals can link to entries (work you've logged) and to strategies (the bigger picture). Hours roll up from entries through goals into strategy reports.</p>
+    <p>Two layers: <strong>daily goals</strong> for what you want done today, and <strong>strategies</strong> for things that span days or weeks.</p>
+    <p>Goals link to entries (work you've logged) and to strategies. Hours roll up from entries through goals into strategy reports.</p>
 
     <pre><code>strategy: "ship v2 auth"
   ├── goal: "implement oauth2 pkce" (2026-04-14) → entries #41, #42
@@ -39,8 +39,9 @@
 
     <h3>Set goals for today</h3>
     <pre><code>hrs goals add "implement oauth2 pkce"
-hrs goals add "review deployment docs" -d 2026-04-18</code></pre>
-    <p><code>-d</code> sets the date. Defaults to today.</p>
+hrs goals add "review deployment docs" -d 2026-04-18
+hrs goals add "write migration scripts" -s 1</code></pre>
+    <p><code>-d</code> sets the date (defaults to today). <code>-s</code> links the goal to a strategy.</p>
 
     <h3>List goals</h3>
     <pre><code>hrs goals                    # today's goals
@@ -60,7 +61,7 @@ hrs goals done 1 -e 41,42   # complete and link entries #41 and #42</code></pre>
 hrs goals rm 1               # delete a goal</code></pre>
 
     <h2>Strategies</h2>
-    <p>Strategies are long-running objectives. Daily goals link up to them, and hrs aggregates progress across all linked goals.</p>
+    <p>Strategies span multiple days. Daily goals link up to them, and hrs rolls up progress across all linked goals.</p>
 
     <h3>Create a strategy</h3>
     <pre><code>hrs strategy add -t "ship v2 auth" -desc "oauth2, token refresh, integration tests"</code></pre>
@@ -76,7 +77,7 @@ hrs strategy --format json           # machine-readable</code></pre>
     <pre><code>hrs strategy 1                       # shorthand for report
 hrs strategy report 1                # explicit
 hrs strategy report 1 --format json  # machine-readable</code></pre>
-    <p>The report shows goal completion (e.g. 3/5 done), total hours aggregated from linked entries, and a list of all linked goals.</p>
+    <p>The report shows goal completion (e.g. 3/5 done), total hours rolled up from linked entries, and a list of all goals.</p>
 
     <h3>Manage lifecycle</h3>
     <pre><code>hrs strategy done 1          # mark as completed
@@ -98,9 +99,9 @@ hrs strategy rm 1            # delete (unlinks goals, doesn't delete them)</code
     <pre><code># 1. create strategy
 hrs strategy add -t "migrate to postgres"
 
-# 2. set today's goals
-hrs goals add "schema migration scripts"
-hrs goals add "update connection pooling"
+# 2. set today's goals, linked to the strategy (-s flag)
+hrs goals add "schema migration scripts" -s 1
+hrs goals add "update connection pooling" -s 1
 
 # 3. log work as you go
 hrs log -c dev -t "wrote migration scripts" -b "up/down for users table;seed data" -e 2
@@ -111,7 +112,7 @@ hrs goals done 1 -e 50
 # 5. check progress
 hrs strategy 1</code></pre>
 
-    <p>Note: linking goals to strategies is done via the API (pass <code>strategy_id</code> when creating a goal via HTTP). The CLI <code>goals add</code> command creates standalone goals.</p>
+    <p>Link goals to a strategy with <code>-s</code> on the CLI or <code>strategy_id</code> via HTTP.</p>
 
     <h2>TUI support</h2>
     <p>The TUI has a dedicated goals view. Press <code>tab</code> to switch between entries and goals. See <a href="/docs/tui.html">TUI explorer</a> for all keybindings.</p>
