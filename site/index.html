@@ -132,9 +132,26 @@ hrs tui</code></pre>
     <pre><code>After completing significant work, log it with `hrs log`.
 Run `hrs log -h` to discover the flags.
 
-Log proactively. Don't wait to be asked.</code></pre>
+Log proactively. Don't wait to be asked.
 
-    <p>Zero config. Data goes to <code>~/.hrs/hrs.db</code> automatically. See the <a href="/docs/">full docs</a> for <a href="/docs/agent-integration.html">agent integration</a>, <a href="/docs/api.html">API reference</a>, and all CLI commands.</p>
+## Goals &amp; strategies (optional)
+
+Before starting a task, check for active strategies and today's goals:
+
+    hrs strategy
+    hrs goals
+
+If the current task aligns with a strategy, set a goal for it:
+
+    hrs goals add "description of what you're about to do"
+
+After completing work, mark the goal done and link entry IDs:
+
+    hrs goals done &lt;goal_id&gt; -e &lt;entry_id1&gt;,&lt;entry_id2&gt;
+
+Don't create strategies. Just work within existing ones.</code></pre>
+
+    <p>Zero config. Data goes to <code>~/.hrs/hrs.db</code> automatically. See the <a href="/docs/">full docs</a> for <a href="/docs/agent-integration.html">agent integration</a>, <a href="/docs/goals.html">goals &amp; strategies</a>, <a href="/docs/api.html">API reference</a>, and all CLI commands.</p>
   </div>
 </section>
 
