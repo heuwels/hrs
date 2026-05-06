@@ -50,12 +50,24 @@ var schema = map[string]any{
 				{"name": "text", "type": "string", "required": true, "description": "Goal description"},
 				{"name": "date", "type": "string", "required": false, "description": "YYYY-MM-DD, defaults to today"},
 				{"name": "strategy_id", "type": "number", "required": false, "description": "Link to a strategic goal"},
+				{"name": "important", "type": "boolean", "required": false, "description": "Mark as important (Eisenhower matrix)"},
+				{"name": "urgent", "type": "boolean", "required": false, "description": "Mark as urgent (Eisenhower matrix)"},
 			},
 		},
 		{
 			"method":      "GET",
 			"path":        "/goals",
 			"description": "List goals. Query params: date (YYYY-MM-DD, defaults to today).",
+		},
+		{
+			"method":      "GET",
+			"path":        "/goals/active",
+			"description": "List all uncompleted goals across all dates, ordered by importance/urgency.",
+		},
+		{
+			"method":      "PUT",
+			"path":        "/goals/{id}",
+			"description": "Update a goal. Body fields: text, strategy_id, important, urgent (all optional, partial update).",
 		},
 		{
 			"method":      "PUT",
@@ -83,6 +95,8 @@ var schema = map[string]any{
 			"fields": []map[string]any{
 				{"name": "title", "type": "string", "required": true, "description": "Strategic goal title"},
 				{"name": "description", "type": "string", "required": false, "description": "Longer description of the strategic goal"},
+				{"name": "important", "type": "boolean", "required": false, "description": "Mark as important (Eisenhower matrix)"},
+				{"name": "urgent", "type": "boolean", "required": false, "description": "Mark as urgent (Eisenhower matrix)"},
 			},
 		},
 		{
@@ -233,6 +247,8 @@ func (s *Server) CreateGoal(w http.ResponseWriter, r *http.Request) {
 		Date       string `json:"date"`
 		Text       string `json:"text"`
 		StrategyID *int64 `json:"strategy_id"`
+		Important  bool   `json:"important"`
+		Urgent     bool   `json:"urgent"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
@@ -242,7 +258,7 @@ func (s *Server) CreateGoal(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "text required"})
 		return
 	}
-	id, err := InsertGoal(s.db, body.Date, body.Text, body.StrategyID)
+	id, err := InsertGoal(s.db, body.Date, body.Text, body.StrategyID, body.Important, body.Urgent)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -324,6 +340,58 @@ func (s *Server) DeleteGoalHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": id})
 }
 
+func (s *Server) UpdateGoalHandler(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	g, err := GetGoalByID(s.db, id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	var body struct {
+		Text       *string `json:"text"`
+		StrategyID *int64  `json:"strategy_id"`
+		Important  *bool   `json:"important"`
+		Urgent     *bool   `json:"urgent"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
+		return
+	}
+	if body.Text != nil {
+		g.Text = *body.Text
+	}
+	if body.StrategyID != nil {
+		g.StrategyID = body.StrategyID
+	}
+	if body.Important != nil {
+		g.Important = *body.Important
+	}
+	if body.Urgent != nil {
+		g.Urgent = *body.Urgent
+	}
+	if err := UpdateGoal(s.db, id, g.Text, g.StrategyID, g.Important, g.Urgent); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, g)
+}
+
+func (s *Server) ListActiveGoals(w http.ResponseWriter, _ *http.Request) {
+	goals, err := GetActiveGoals(s.db)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if goals == nil {
+		goals = []Goal{}
+	}
+	writeJSON(w, http.StatusOK, goals)
+}
+
 // --- Strategy handlers ---
 
 func (s *Server) ListStrategies(w http.ResponseWriter, r *http.Request) {
@@ -343,6 +411,8 @@ func (s *Server) CreateStrategy(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Title       string `json:"title"`
 		Description string `json:"description"`
+		Important   bool   `json:"important"`
+		Urgent      bool   `json:"urgent"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
@@ -352,7 +422,7 @@ func (s *Server) CreateStrategy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "title required"})
 		return
 	}
-	id, err := InsertStrategy(s.db, body.Title, body.Description)
+	id, err := InsertStrategy(s.db, body.Title, body.Description, body.Important, body.Urgent)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return

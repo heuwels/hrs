@@ -58,7 +58,9 @@ func cmdServe(args []string) error {
 	mux.HandleFunc("PUT /entries/{id}", s.UpdateEntryHandler)
 	mux.HandleFunc("DELETE /entries/{id}", s.DeleteEntry)
 	mux.HandleFunc("GET /goals", s.ListGoals)
+	mux.HandleFunc("GET /goals/active", s.ListActiveGoals)
 	mux.HandleFunc("POST /goals", s.CreateGoal)
+	mux.HandleFunc("PUT /goals/{id}", s.UpdateGoalHandler)
 	mux.HandleFunc("PUT /goals/{id}/done", s.CompleteGoalHandler)
 	mux.HandleFunc("PUT /goals/{id}/undo", s.UncompleteGoalHandler)
 	mux.HandleFunc("POST /goals/{id}/link", s.LinkGoalEntriesHandler)
@@ -171,6 +173,22 @@ func cmdLs(args []string) error {
 	}
 	defer db.Close()
 
+	isTTY := isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
+
+	// For single-date TTY display, use enriched entries to show goal/strategy context
+	if *from == "" && isTTY {
+		enriched, err := GetEnrichedEntries(db, date)
+		if err != nil {
+			return err
+		}
+		if len(enriched) == 0 {
+			fmt.Printf("No entries for %s\n", date)
+			return nil
+		}
+		renderColorLsEnriched(enriched)
+		return nil
+	}
+
 	var entries []Entry
 	if *from != "" {
 		if *to == "" {
@@ -201,8 +219,6 @@ func cmdLs(args []string) error {
 		}
 		return nil
 	}
-
-	isTTY := isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
 
 	// Group by date for range queries, render each group
 	groups := groupByDate(entries)
@@ -259,6 +275,40 @@ func renderColorLs(entries []Entry) {
 		fmt.Printf("%s %s%s\n", catSt.Render(fmt.Sprintf("[%s]", e.Category)), titleSt.Render(e.Title), hours)
 		for _, bullet := range e.Bullets {
 			fmt.Printf("  %s\n", bulletSt.Render("- "+bullet))
+		}
+		fmt.Println()
+	}
+	fmt.Println(sumSt.Render(fmt.Sprintf("%d entries  ~%gh  %.1fd", len(entries), total, total/8)))
+}
+
+func renderColorLsEnriched(entries []EnrichedEntry) {
+	hdrStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+	catSt := lipgloss.NewStyle().Foreground(lipgloss.Color("5"))
+	titleSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+	hoursSt := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	bulletSt := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	sumSt := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+	ctxSt := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+
+	fmt.Println(hdrStyle.Render(fmt.Sprintf("# Worklog — %s", entries[0].Date)))
+	fmt.Println()
+	var total float64
+	for _, e := range entries {
+		total += e.HoursEst
+		hours := ""
+		if e.HoursEst > 0 {
+			hours = hoursSt.Render(fmt.Sprintf(" (~%gh)", e.HoursEst))
+		}
+		fmt.Printf("%s %s%s\n", catSt.Render(fmt.Sprintf("[%s]", e.Category)), titleSt.Render(e.Title), hours)
+		for _, bullet := range e.Bullets {
+			fmt.Printf("  %s\n", bulletSt.Render("- "+bullet))
+		}
+		if e.GoalText != nil {
+			ctx := fmt.Sprintf("  -> %q", *e.GoalText)
+			if e.StrategyTitle != nil {
+				ctx += fmt.Sprintf(" | s: %s", *e.StrategyTitle)
+			}
+			fmt.Println(ctxSt.Render(ctx))
 		}
 		fmt.Println()
 	}
@@ -473,7 +523,7 @@ func cmdGoals(args []string) error {
 	action := ""
 	if len(args) > 0 {
 		switch args[0] {
-		case "add", "done", "undo", "rm", "link":
+		case "add", "done", "undo", "rm", "link", "edit":
 			action = args[0]
 			args = args[1:]
 		}
@@ -490,6 +540,8 @@ func cmdGoals(args []string) error {
 		return cmdGoalsRm(args)
 	case "link":
 		return cmdGoalsLink(args)
+	case "edit":
+		return cmdGoalsEdit(args)
 	default:
 		return cmdGoalsList(args)
 	}
@@ -498,12 +550,13 @@ func cmdGoals(args []string) error {
 const goalsUsage = `hrs goals - manage daily goals
 
 usage:
-  hrs goals [-d date]                list goals (default: today)
-  hrs goals add "goal text" [-d ..]  add a goal
-  hrs goals done <id> [-e entry_ids] mark a goal complete
-  hrs goals undo <id>                reopen a completed goal
-  hrs goals rm <id>                  delete a goal
-  hrs goals link <id> -e entry_ids   link entries to a goal
+  hrs goals [-d date]                       list goals (default: today)
+  hrs goals add "goal text" [-d ..] [-i -u] add a goal
+  hrs goals edit <id> [-t text] [-i -u]     edit a goal
+  hrs goals done <id> [-e entry_ids]        mark a goal complete
+  hrs goals undo <id>                       reopen a completed goal
+  hrs goals rm <id>                         delete a goal
+  hrs goals link <id> -e entry_ids          link entries to a goal
 `
 
 func cmdGoalsList(args []string) error {
@@ -555,6 +608,8 @@ func cmdGoalsList(args []string) error {
 		dim := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 		check := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 		open := lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+		impSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("1"))
+		urgSt := lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 		fmt.Println(hdr.Render(fmt.Sprintf("Goals — %s  (%d/%d)", *date, done, len(goals))))
 		fmt.Println()
 		for _, g := range goals {
@@ -562,14 +617,24 @@ func cmdGoalsList(args []string) error {
 			if g.StrategyID != nil {
 				stratTag = dim.Render(fmt.Sprintf(" s#%d", *g.StrategyID))
 			}
+			prio := ""
+			if g.Important {
+				prio += impSt.Render("!")
+			}
+			if g.Urgent {
+				prio += urgSt.Render("^")
+			}
+			if prio != "" {
+				prio += " "
+			}
 			if g.Completed {
-				fmt.Printf("  %s %s", check.Render("[x]"), dim.Render(g.Text))
+				fmt.Printf("  %s %s%s", check.Render("[x]"), prio, dim.Render(g.Text))
 				if len(g.EntryIDs) > 0 {
 					fmt.Printf(" %s", dim.Render(fmt.Sprintf("(entries: %s)", formatIDs(g.EntryIDs))))
 				}
 				fmt.Printf("%s\n", stratTag)
 			} else {
-				fmt.Printf("  %s %s %s%s\n", open.Render("[ ]"), g.Text, dim.Render(fmt.Sprintf("#%d", g.ID)), stratTag)
+				fmt.Printf("  %s %s%s %s%s\n", open.Render("[ ]"), prio, g.Text, dim.Render(fmt.Sprintf("#%d", g.ID)), stratTag)
 			}
 		}
 	} else {
@@ -598,6 +663,8 @@ func cmdGoalsAdd(args []string) error {
 	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
 	date := fs.String("d", "", "date (YYYY-MM-DD, default: today)")
 	strategyFlag := fs.Int64("s", 0, "link to strategy ID")
+	importantFlag := fs.Bool("i", false, "mark as important")
+	urgentFlag := fs.Bool("u", false, "mark as urgent")
 	fs.Parse(args)
 
 	text := strings.Join(fs.Args(), " ")
@@ -619,7 +686,7 @@ func cmdGoalsAdd(args []string) error {
 		sid = strategyFlag
 	}
 
-	id, err := InsertGoal(db, *date, text, sid)
+	id, err := InsertGoal(db, *date, text, sid, *importantFlag, *urgentFlag)
 	if err != nil {
 		return err
 	}
@@ -766,6 +833,57 @@ func cmdGoalsLink(args []string) error {
 	return nil
 }
 
+func cmdGoalsEdit(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: hrs goals edit <id> [-t text] [-s strategy_id] [-i] [-u]")
+	}
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid goal id: %s", args[0])
+	}
+
+	fs := flag.NewFlagSet("hrs goals edit", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	text := fs.String("t", "", "text")
+	strategyFlag := fs.Int64("s", -1, "link to strategy ID (0 to unlink)")
+	importantFlag := fs.String("i", "", "important (true|false)")
+	urgentFlag := fs.String("u", "", "urgent (true|false)")
+	fs.Parse(args[1:])
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	g, err := GetGoalByID(db, id)
+	if err != nil {
+		return fmt.Errorf("goal %d not found", id)
+	}
+
+	if *text != "" {
+		g.Text = *text
+	}
+	if *strategyFlag == 0 {
+		g.StrategyID = nil
+	} else if *strategyFlag > 0 {
+		g.StrategyID = strategyFlag
+	}
+	if *importantFlag != "" {
+		g.Important = *importantFlag == "true" || *importantFlag == "1"
+	}
+	if *urgentFlag != "" {
+		g.Urgent = *urgentFlag == "true" || *urgentFlag == "1"
+	}
+
+	if err := UpdateGoal(db, id, g.Text, g.StrategyID, g.Important, g.Urgent); err != nil {
+		return err
+	}
+	out, _ := json.Marshal(g)
+	fmt.Println(string(out))
+	return nil
+}
+
 func cmdStrategy(args []string) error {
 	action := ""
 	if len(args) > 0 {
@@ -842,6 +960,8 @@ func cmdStrategyList(args []string) error {
 		activeSt := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 		completedSt := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 		archivedSt := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+		impSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("1"))
+		urgSt := lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 		fmt.Println(hdr.Render("Strategies"))
 		fmt.Println()
 		for _, s := range strategies {
@@ -855,7 +975,17 @@ func cmdStrategyList(args []string) error {
 				st = activeSt
 			}
 			badge := st.Render(fmt.Sprintf("[%s]", s.Status))
-			fmt.Printf("  %s %s %s", dim.Render(fmt.Sprintf("#%d", s.ID)), badge, s.Title)
+			prio := ""
+			if s.Important {
+				prio += impSt.Render("!")
+			}
+			if s.Urgent {
+				prio += urgSt.Render("^")
+			}
+			if prio != "" {
+				prio += " "
+			}
+			fmt.Printf("  %s %s %s%s", dim.Render(fmt.Sprintf("#%d", s.ID)), badge, prio, s.Title)
 			if s.Description != "" {
 				fmt.Printf(" %s", dim.Render("- "+s.Description))
 			}
@@ -874,6 +1004,8 @@ func cmdStrategyAdd(args []string) error {
 	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
 	title := fs.String("t", "", "title")
 	desc := fs.String("desc", "", "description")
+	importantFlag := fs.Bool("i", false, "mark as important")
+	urgentFlag := fs.Bool("u", false, "mark as urgent")
 	fs.Parse(args)
 
 	// Allow title as positional arg or -t flag
@@ -890,7 +1022,7 @@ func cmdStrategyAdd(args []string) error {
 	}
 	defer db.Close()
 
-	id, err := InsertStrategy(db, *title, *desc)
+	id, err := InsertStrategy(db, *title, *desc, *importantFlag, *urgentFlag)
 	if err != nil {
 		return err
 	}
@@ -928,7 +1060,7 @@ func cmdStrategyStatus(args []string, status string) error {
 
 func cmdStrategyEdit(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: hrs strategy edit <id> [-t title] [-desc description]")
+		return fmt.Errorf("usage: hrs strategy edit <id> [-t title] [-desc description] [-i true|false] [-u true|false]")
 	}
 	id, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
@@ -939,6 +1071,8 @@ func cmdStrategyEdit(args []string) error {
 	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
 	title := fs.String("t", "", "title")
 	desc := fs.String("desc", "", "description")
+	importantFlag := fs.String("i", "", "important (true|false)")
+	urgentFlag := fs.String("u", "", "urgent (true|false)")
 	fs.Parse(args[1:])
 
 	db, err := OpenDB(*dbPath)
@@ -957,7 +1091,13 @@ func cmdStrategyEdit(args []string) error {
 	if *desc != "" {
 		s.Description = *desc
 	}
-	if err := UpdateStrategy(db, id, s.Title, s.Description); err != nil {
+	if *importantFlag != "" {
+		s.Important = *importantFlag == "true" || *importantFlag == "1"
+	}
+	if *urgentFlag != "" {
+		s.Urgent = *urgentFlag == "true" || *urgentFlag == "1"
+	}
+	if err := UpdateStrategy(db, id, s.Title, s.Description, s.Important, s.Urgent); err != nil {
 		return err
 	}
 	out, _ := json.Marshal(s)

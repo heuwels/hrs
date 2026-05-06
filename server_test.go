@@ -28,7 +28,9 @@ func testMux(s *Server) *http.ServeMux {
 	mux.HandleFunc("PUT /entries/{id}", s.UpdateEntryHandler)
 	mux.HandleFunc("DELETE /entries/{id}", s.DeleteEntry)
 	mux.HandleFunc("GET /goals", s.ListGoals)
+	mux.HandleFunc("GET /goals/active", s.ListActiveGoals)
 	mux.HandleFunc("POST /goals", s.CreateGoal)
+	mux.HandleFunc("PUT /goals/{id}", s.UpdateGoalHandler)
 	mux.HandleFunc("PUT /goals/{id}/done", s.CompleteGoalHandler)
 	mux.HandleFunc("PUT /goals/{id}/undo", s.UncompleteGoalHandler)
 	mux.HandleFunc("POST /goals/{id}/link", s.LinkGoalEntriesHandler)
@@ -555,6 +557,121 @@ func TestGoalWithStrategy(t *testing.T) {
 	mux.ServeHTTP(w, httptest.NewRequest("GET", "/goals?date=2026-04-16", nil))
 	if !strings.Contains(w.Body.String(), `"strategy_id":1`) {
 		t.Fatalf("strategy_id missing: %s", w.Body.String())
+	}
+}
+
+func TestGoalImportanceUrgency(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	// Create goal with important and urgent
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/goals",
+		strings.NewReader(`{"date":"2026-04-16","text":"Critical fix","important":true,"urgent":true}`)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+
+	// Verify fields come back in GET
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/goals?date=2026-04-16", nil))
+	resp := w.Body.String()
+	if !strings.Contains(resp, `"important":true`) {
+		t.Fatalf("important not true: %s", resp)
+	}
+	if !strings.Contains(resp, `"urgent":true`) {
+		t.Fatalf("urgent not true: %s", resp)
+	}
+}
+
+func TestStrategyImportanceUrgency(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/strategies",
+		strings.NewReader(`{"title":"Urgent initiative","important":true,"urgent":true}`)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+
+	// Verify in report
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/strategies/1", nil))
+	resp := w.Body.String()
+	if !strings.Contains(resp, `"important":true`) {
+		t.Fatalf("important not true: %s", resp)
+	}
+	if !strings.Contains(resp, `"urgent":true`) {
+		t.Fatalf("urgent not true: %s", resp)
+	}
+}
+
+func TestGoalUpdate(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	// Create a goal
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/goals",
+		strings.NewReader(`{"date":"2026-04-16","text":"Original goal"}`)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+
+	// Update it
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("PUT", "/goals/1",
+		strings.NewReader(`{"text":"Updated goal","important":true,"urgent":false}`)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("update: %d %s", w.Code, w.Body.String())
+	}
+
+	// Verify
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/goals?date=2026-04-16", nil))
+	resp := w.Body.String()
+	if !strings.Contains(resp, "Updated goal") {
+		t.Fatalf("text not updated: %s", resp)
+	}
+	if !strings.Contains(resp, `"important":true`) {
+		t.Fatalf("important not set: %s", resp)
+	}
+}
+
+func TestActiveGoals(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	// Create goals on different dates
+	for _, body := range []string{
+		`{"date":"2026-04-14","text":"Goal A","important":true}`,
+		`{"date":"2026-04-15","text":"Goal B","urgent":true}`,
+		`{"date":"2026-04-16","text":"Goal C"}`,
+	} {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("POST", "/goals", strings.NewReader(body)))
+		if w.Code != http.StatusCreated {
+			t.Fatalf("create: %d %s", w.Code, w.Body.String())
+		}
+	}
+
+	// Complete Goal C
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("PUT", "/goals/3/done", nil))
+
+	// Get active goals - should have A and B but not C
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/goals/active", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("active: %d %s", w.Code, w.Body.String())
+	}
+	resp := w.Body.String()
+	if !strings.Contains(resp, "Goal A") || !strings.Contains(resp, "Goal B") {
+		t.Fatalf("missing active goals: %s", resp)
+	}
+	if strings.Contains(resp, "Goal C") {
+		t.Fatalf("completed goal in active list: %s", resp)
 	}
 }
 

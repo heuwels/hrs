@@ -28,6 +28,8 @@ type Goal struct {
 	Completed  bool    `json:"completed"`
 	EntryIDs   []int64 `json:"entry_ids,omitempty"`
 	StrategyID *int64  `json:"strategy_id,omitempty"`
+	Important  bool    `json:"important"`
+	Urgent     bool    `json:"urgent"`
 }
 
 type Strategy struct {
@@ -37,6 +39,16 @@ type Strategy struct {
 	Status      string  `json:"status"`
 	CreatedAt   string  `json:"created_at"`
 	CompletedAt *string `json:"completed_at,omitempty"`
+	Important   bool    `json:"important"`
+	Urgent      bool    `json:"urgent"`
+}
+
+type EnrichedEntry struct {
+	Entry
+	GoalID        *int64  `json:"goal_id,omitempty"`
+	GoalText      *string `json:"goal_text,omitempty"`
+	StrategyID    *int64  `json:"strategy_id,omitempty"`
+	StrategyTitle *string `json:"strategy_title,omitempty"`
 }
 
 type StrategyReport struct {
@@ -138,6 +150,11 @@ func OpenDB(path string) (*sql.DB, error) {
 	}
 	// Add strategy_id to goals (safe to call repeatedly -- ignore "duplicate column" error)
 	db.Exec(`ALTER TABLE goals ADD COLUMN strategy_id INTEGER REFERENCES strategies(id)`)
+	// Add importance/urgency to goals and strategies
+	db.Exec(`ALTER TABLE goals ADD COLUMN important INTEGER NOT NULL DEFAULT 0`)
+	db.Exec(`ALTER TABLE goals ADD COLUMN urgent INTEGER NOT NULL DEFAULT 0`)
+	db.Exec(`ALTER TABLE strategies ADD COLUMN important INTEGER NOT NULL DEFAULT 0`)
+	db.Exec(`ALTER TABLE strategies ADD COLUMN urgent INTEGER NOT NULL DEFAULT 0`)
 	// Enable foreign keys
 	_, err = db.Exec(`PRAGMA foreign_keys = ON`)
 	return db, err
@@ -270,7 +287,7 @@ func DeleteEntryByID(db *sql.DB, id int64) (string, error) {
 
 // --- Goals ---
 
-func InsertGoal(db *sql.DB, date, text string, strategyID *int64) (int64, error) {
+func InsertGoal(db *sql.DB, date, text string, strategyID *int64, important, urgent bool) (int64, error) {
 	if date == "" {
 		date = now().Format("2006-01-02")
 	}
@@ -280,7 +297,8 @@ func InsertGoal(db *sql.DB, date, text string, strategyID *int64) (int64, error)
 	if strings.TrimSpace(text) == "" {
 		return 0, fmt.Errorf("goal text must be non-empty")
 	}
-	res, err := db.Exec(`INSERT INTO goals (date, text, strategy_id) VALUES (?, ?, ?)`, date, text, strategyID)
+	res, err := db.Exec(`INSERT INTO goals (date, text, strategy_id, important, urgent) VALUES (?, ?, ?, ?, ?)`,
+		date, text, strategyID, important, urgent)
 	if err != nil {
 		return 0, err
 	}
@@ -289,7 +307,7 @@ func InsertGoal(db *sql.DB, date, text string, strategyID *int64) (int64, error)
 
 func GetGoals(db *sql.DB, date string) ([]Goal, error) {
 	rows, err := db.Query(
-		`SELECT id, date, text, completed, strategy_id FROM goals WHERE date=? ORDER BY id`, date,
+		`SELECT id, date, text, completed, strategy_id, important, urgent FROM goals WHERE date=? ORDER BY id`, date,
 	)
 	if err != nil {
 		return nil, err
@@ -298,7 +316,7 @@ func GetGoals(db *sql.DB, date string) ([]Goal, error) {
 	var out []Goal
 	for rows.Next() {
 		var g Goal
-		if err := rows.Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID); err != nil {
+		if err := rows.Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID, &g.Important, &g.Urgent); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
@@ -355,8 +373,8 @@ func DeleteGoal(db *sql.DB, id int64) error {
 
 func GetGoalByID(db *sql.DB, id int64) (*Goal, error) {
 	var g Goal
-	err := db.QueryRow(`SELECT id, date, text, completed, strategy_id FROM goals WHERE id=?`, id).
-		Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID)
+	err := db.QueryRow(`SELECT id, date, text, completed, strategy_id, important, urgent FROM goals WHERE id=?`, id).
+		Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID, &g.Important, &g.Urgent)
 	if err != nil {
 		return nil, err
 	}
@@ -376,11 +394,12 @@ func LinkGoalEntries(db *sql.DB, goalID int64, entryIDs []int64) error {
 
 // --- Strategies ---
 
-func InsertStrategy(db *sql.DB, title, description string) (int64, error) {
+func InsertStrategy(db *sql.DB, title, description string, important, urgent bool) (int64, error) {
 	if strings.TrimSpace(title) == "" {
 		return 0, fmt.Errorf("strategy title must be non-empty")
 	}
-	res, err := db.Exec(`INSERT INTO strategies (title, description) VALUES (?, ?)`, title, description)
+	res, err := db.Exec(`INSERT INTO strategies (title, description, important, urgent) VALUES (?, ?, ?, ?)`,
+		title, description, important, urgent)
 	if err != nil {
 		return 0, err
 	}
@@ -388,7 +407,7 @@ func InsertStrategy(db *sql.DB, title, description string) (int64, error) {
 }
 
 func GetStrategies(db *sql.DB, status string) ([]Strategy, error) {
-	q := `SELECT id, title, description, status, created_at, completed_at FROM strategies`
+	q := `SELECT id, title, description, status, created_at, completed_at, important, urgent FROM strategies`
 	var args []any
 	if status != "" {
 		q += ` WHERE status=?`
@@ -403,7 +422,7 @@ func GetStrategies(db *sql.DB, status string) ([]Strategy, error) {
 	var out []Strategy
 	for rows.Next() {
 		var s Strategy
-		if err := rows.Scan(&s.ID, &s.Title, &s.Description, &s.Status, &s.CreatedAt, &s.CompletedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Title, &s.Description, &s.Status, &s.CreatedAt, &s.CompletedAt, &s.Important, &s.Urgent); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
@@ -414,8 +433,8 @@ func GetStrategies(db *sql.DB, status string) ([]Strategy, error) {
 func GetStrategyByID(db *sql.DB, id int64) (*Strategy, error) {
 	var s Strategy
 	err := db.QueryRow(
-		`SELECT id, title, description, status, created_at, completed_at FROM strategies WHERE id=?`, id,
-	).Scan(&s.ID, &s.Title, &s.Description, &s.Status, &s.CreatedAt, &s.CompletedAt)
+		`SELECT id, title, description, status, created_at, completed_at, important, urgent FROM strategies WHERE id=?`, id,
+	).Scan(&s.ID, &s.Title, &s.Description, &s.Status, &s.CreatedAt, &s.CompletedAt, &s.Important, &s.Urgent)
 	if err != nil {
 		return nil, err
 	}
@@ -432,8 +451,9 @@ func UpdateStrategyStatus(db *sql.DB, id int64, status string) error {
 	return err
 }
 
-func UpdateStrategy(db *sql.DB, id int64, title, description string) error {
-	_, err := db.Exec(`UPDATE strategies SET title=?, description=? WHERE id=?`, title, description, id)
+func UpdateStrategy(db *sql.DB, id int64, title, description string, important, urgent bool) error {
+	_, err := db.Exec(`UPDATE strategies SET title=?, description=?, important=?, urgent=? WHERE id=?`,
+		title, description, important, urgent, id)
 	return err
 }
 
@@ -469,7 +489,7 @@ func GetStrategyReport(db *sql.DB, id int64) (*StrategyReport, error) {
 
 func GetStrategyGoals(db *sql.DB, strategyID int64) ([]Goal, error) {
 	rows, err := db.Query(
-		`SELECT id, date, text, completed, strategy_id FROM goals WHERE strategy_id=? ORDER BY date DESC, id`, strategyID,
+		`SELECT id, date, text, completed, strategy_id, important, urgent FROM goals WHERE strategy_id=? ORDER BY date DESC, id`, strategyID,
 	)
 	if err != nil {
 		return nil, err
@@ -478,7 +498,7 @@ func GetStrategyGoals(db *sql.DB, strategyID int64) ([]Goal, error) {
 	var out []Goal
 	for rows.Next() {
 		var g Goal
-		if err := rows.Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID); err != nil {
+		if err := rows.Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID, &g.Important, &g.Urgent); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
@@ -490,6 +510,82 @@ func GetStrategyGoals(db *sql.DB, strategyID int64) ([]Goal, error) {
 		out[i].EntryIDs, _ = getGoalEntryIDs(db, out[i].ID)
 	}
 	return out, nil
+}
+
+func UpdateGoal(db *sql.DB, id int64, text string, strategyID *int64, important, urgent bool) error {
+	_, err := db.Exec(`UPDATE goals SET text=?, strategy_id=?, important=?, urgent=? WHERE id=?`,
+		text, strategyID, important, urgent, id)
+	return err
+}
+
+func GetActiveGoals(db *sql.DB) ([]Goal, error) {
+	rows, err := db.Query(
+		`SELECT id, date, text, completed, strategy_id, important, urgent
+		 FROM goals WHERE completed=0
+		 ORDER BY important DESC, urgent DESC, date DESC, id`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Goal
+	for rows.Next() {
+		var g Goal
+		if err := rows.Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID, &g.Important, &g.Urgent); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].EntryIDs, _ = getGoalEntryIDs(db, out[i].ID)
+	}
+	return out, nil
+}
+
+func GetEnrichedEntries(db *sql.DB, date string) ([]EnrichedEntry, error) {
+	rows, err := db.Query(`
+		SELECT e.id, e.date, e.time, e.category, e.title, e.bullets, e.hours_est,
+		       g.id, g.text, s.id, s.title
+		FROM entries e
+		LEFT JOIN (
+			SELECT ge.entry_id, MIN(ge.goal_id) as goal_id
+			FROM goal_entries ge
+			GROUP BY ge.entry_id
+		) first_goal ON first_goal.entry_id = e.id
+		LEFT JOIN goals g ON g.id = first_goal.goal_id
+		LEFT JOIN strategies s ON s.id = g.strategy_id
+		WHERE e.date=?
+		ORDER BY e.time, e.id
+	`, date)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []EnrichedEntry
+	for rows.Next() {
+		var ee EnrichedEntry
+		var raw string
+		var gID, sID sql.NullInt64
+		var gText, sTitle sql.NullString
+		if err := rows.Scan(&ee.ID, &ee.Date, &ee.Time, &ee.Category, &ee.Title, &raw, &ee.HoursEst,
+			&gID, &gText, &sID, &sTitle); err != nil {
+			return nil, err
+		}
+		json.Unmarshal([]byte(raw), &ee.Bullets)
+		if gID.Valid {
+			ee.GoalID = &gID.Int64
+			ee.GoalText = &gText.String
+		}
+		if sID.Valid {
+			ee.StrategyID = &sID.Int64
+			ee.StrategyTitle = &sTitle.String
+		}
+		out = append(out, ee)
+	}
+	return out, rows.Err()
 }
 
 func RenderMarkdown(entries []Entry) string {

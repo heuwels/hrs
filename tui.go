@@ -13,7 +13,10 @@ type tuiView int
 
 const (
 	viewEntries tuiView = iota
-	viewGoals
+	viewGoalsList
+	viewGoalsMatrix
+	viewStratList
+	viewStratMatrix
 )
 
 var (
@@ -31,6 +34,11 @@ var (
 	openStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	tabActive    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6")).Underline(true)
 	tabInactive  = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	impStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("1"))
+	urgStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	quadStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+	quadSelStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2")).Background(lipgloss.Color("0"))
+	ctxStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
 )
 
 type tuiModel struct {
@@ -46,8 +54,27 @@ type tuiModel struct {
 	height  int
 	width   int
 	msg     string
-	linking bool  // selecting entries to link to a goal
+	linking bool // selecting entries to link to a goal
 	linkIDs []int64
+
+	// Enriched entries (entries with goal/strategy context)
+	enriched []EnrichedEntry
+
+	// Strategy list
+	strategies []Strategy
+	sCursor    int
+
+	// Matrix state
+	activeGoals  []Goal
+	activeStrats []Strategy
+	mQuadrant    int // 0=Q1, 1=Q2, 2=Q3, 3=Q4
+	mCursor      int // cursor within current quadrant
+	smQuadrant   int // strategy matrix quadrant
+	smCursor     int // strategy matrix cursor
+
+	// Remember sub-view preference when switching top-level tabs
+	goalsSubMatrix bool // true = matrix, false = list
+	stratSubMatrix bool
 }
 
 func newTUIModel(db *sql.DB, date string) tuiModel {
@@ -55,6 +82,9 @@ func newTUIModel(db *sql.DB, date string) tuiModel {
 	m.loadDates()
 	m.loadEntries()
 	m.loadGoals()
+	m.loadStrategies()
+	m.loadActiveGoals()
+	m.loadActiveStrats()
 	// If requested date has no entries and we have other dates, jump to most recent
 	if len(m.entries) == 0 && len(m.dates) > 0 {
 		m.date = m.dates[0]
@@ -80,13 +110,40 @@ func (m *tuiModel) loadDates() {
 
 func (m *tuiModel) loadEntries() {
 	m.entries, _ = GetEntries(m.db, m.date)
+	m.enriched, _ = GetEnrichedEntries(m.db, m.date)
 	m.cursor = 0
 	m.offset = 0
 }
 
 func (m *tuiModel) loadGoals() {
 	m.goals, _ = GetGoals(m.db, m.date)
-	m.gCursor = 0
+	if m.gCursor >= len(m.goals) {
+		m.gCursor = max(0, len(m.goals)-1)
+	}
+}
+
+func (m *tuiModel) loadStrategies() {
+	m.strategies, _ = GetStrategies(m.db, "active")
+	if m.sCursor >= len(m.strategies) {
+		m.sCursor = max(0, len(m.strategies)-1)
+	}
+}
+
+func (m *tuiModel) loadActiveGoals() {
+	m.activeGoals, _ = GetActiveGoals(m.db)
+	// Clamp cursor — quadrant contents may have changed
+	quads := partitionGoals(m.activeGoals)
+	if m.mCursor >= len(quads[m.mQuadrant]) {
+		m.mCursor = max(0, len(quads[m.mQuadrant])-1)
+	}
+}
+
+func (m *tuiModel) loadActiveStrats() {
+	m.activeStrats, _ = GetStrategies(m.db, "active")
+	quads := partitionStrategies(m.activeStrats)
+	if m.smCursor >= len(quads[m.smQuadrant]) {
+		m.smCursor = max(0, len(quads[m.smQuadrant])-1)
+	}
 }
 
 func (m *tuiModel) dateIndex() int {
@@ -96,6 +153,18 @@ func (m *tuiModel) dateIndex() int {
 		}
 	}
 	return -1
+}
+
+// topView returns which top-level section we're in: entries, goals, or strategies
+func (m tuiModel) topView() string {
+	switch m.view {
+	case viewGoalsList, viewGoalsMatrix:
+		return "goals"
+	case viewStratList, viewStratMatrix:
+		return "strategies"
+	default:
+		return "entries"
+	}
 }
 
 func (m tuiModel) Init() tea.Cmd { return nil }
@@ -117,17 +186,43 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "tab":
-			if m.view == viewEntries {
-				m.view = viewGoals
-			} else {
+			// Cycle top-level: entries -> goals -> strategies -> entries
+			switch m.topView() {
+			case "entries":
+				if m.goalsSubMatrix {
+					m.view = viewGoalsMatrix
+				} else {
+					m.view = viewGoalsList
+				}
+			case "goals":
+				if m.stratSubMatrix {
+					m.view = viewStratMatrix
+				} else {
+					m.view = viewStratList
+				}
+				m.loadStrategies()
+				m.loadActiveStrats()
+			case "strategies":
 				m.view = viewEntries
 			}
-
-		// Day navigation (shared)
-		case "h", "left":
-			m.navDay(-1)
-		case "l", "right":
-			m.navDay(1)
+		case "m":
+			// Toggle sub-view: list <-> matrix (only in goals/strategies)
+			switch m.view {
+			case viewGoalsList:
+				m.view = viewGoalsMatrix
+				m.goalsSubMatrix = true
+				m.loadActiveGoals()
+			case viewGoalsMatrix:
+				m.view = viewGoalsList
+				m.goalsSubMatrix = false
+			case viewStratList:
+				m.view = viewStratMatrix
+				m.stratSubMatrix = true
+				m.loadActiveStrats()
+			case viewStratMatrix:
+				m.view = viewStratList
+				m.stratSubMatrix = false
+			}
 		case "t":
 			m.date = now().Format("2006-01-02")
 			m.loadDates()
@@ -137,11 +232,22 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loadDates()
 			m.loadEntries()
 			m.loadGoals()
+			m.loadStrategies()
+			m.loadActiveGoals()
+			m.loadActiveStrats()
 		default:
-			if m.view == viewGoals {
+			switch m.view {
+			case viewGoalsList:
 				return m.updateGoals(msg)
+			case viewGoalsMatrix:
+				return m.updateGoalsMatrix(msg)
+			case viewStratList:
+				return m.updateStrats(msg)
+			case viewStratMatrix:
+				return m.updateStratsMatrix(msg)
+			default:
+				return m.updateEntries(msg)
 			}
-			return m.updateEntries(msg)
 		}
 	}
 	return m, nil
@@ -149,6 +255,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m tuiModel) updateEntries(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "h", "left":
+		m.navDay(-1)
+	case "l", "right":
+		m.navDay(1)
 	case "j", "down":
 		if m.cursor < len(m.entries)-1 {
 			m.cursor++
@@ -188,6 +298,10 @@ func (m tuiModel) updateEntries(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m tuiModel) updateGoals(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "h", "left":
+		m.navDay(-1)
+	case "l", "right":
+		m.navDay(1)
 	case "j", "down":
 		if m.gCursor < len(m.goals)-1 {
 			m.gCursor++
@@ -218,6 +332,28 @@ func (m tuiModel) updateGoals(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.loadGoals()
 		}
+	case "i":
+		if len(m.goals) > 0 && m.gCursor < len(m.goals) {
+			g := m.goals[m.gCursor]
+			UpdateGoal(m.db, g.ID, g.Text, g.StrategyID, !g.Important, g.Urgent)
+			m.loadGoals()
+			if g.Important {
+				m.msg = fmt.Sprintf("goal %d: removed important", g.ID)
+			} else {
+				m.msg = fmt.Sprintf("goal %d: marked important", g.ID)
+			}
+		}
+	case "u":
+		if len(m.goals) > 0 && m.gCursor < len(m.goals) {
+			g := m.goals[m.gCursor]
+			UpdateGoal(m.db, g.ID, g.Text, g.StrategyID, g.Important, !g.Urgent)
+			m.loadGoals()
+			if g.Urgent {
+				m.msg = fmt.Sprintf("goal %d: removed urgent", g.ID)
+			} else {
+				m.msg = fmt.Sprintf("goal %d: marked urgent", g.ID)
+			}
+		}
 	case "d":
 		if len(m.goals) > 0 && m.gCursor < len(m.goals) {
 			g := m.goals[m.gCursor]
@@ -232,6 +368,245 @@ func (m tuiModel) updateGoals(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.gCursor = 0
 	case "G":
 		m.gCursor = max(0, len(m.goals)-1)
+	}
+	return m, nil
+}
+
+func (m tuiModel) updateStrats(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "j", "down":
+		if m.sCursor < len(m.strategies)-1 {
+			m.sCursor++
+		}
+	case "k", "up":
+		if m.sCursor > 0 {
+			m.sCursor--
+		}
+	case "i":
+		if len(m.strategies) > 0 && m.sCursor < len(m.strategies) {
+			s := m.strategies[m.sCursor]
+			UpdateStrategy(m.db, s.ID, s.Title, s.Description, !s.Important, s.Urgent)
+			m.loadStrategies()
+			if s.Important {
+				m.msg = fmt.Sprintf("strategy %d: removed important", s.ID)
+			} else {
+				m.msg = fmt.Sprintf("strategy %d: marked important", s.ID)
+			}
+		}
+	case "u":
+		if len(m.strategies) > 0 && m.sCursor < len(m.strategies) {
+			s := m.strategies[m.sCursor]
+			UpdateStrategy(m.db, s.ID, s.Title, s.Description, s.Important, !s.Urgent)
+			m.loadStrategies()
+			if s.Urgent {
+				m.msg = fmt.Sprintf("strategy %d: removed urgent", s.ID)
+			} else {
+				m.msg = fmt.Sprintf("strategy %d: marked urgent", s.ID)
+			}
+		}
+	case "d":
+		if len(m.strategies) > 0 && m.sCursor < len(m.strategies) {
+			s := m.strategies[m.sCursor]
+			DeleteStrategy(m.db, s.ID)
+			m.loadStrategies()
+			if m.sCursor >= len(m.strategies) && m.sCursor > 0 {
+				m.sCursor = len(m.strategies) - 1
+			}
+			m.msg = fmt.Sprintf("deleted strategy %d", s.ID)
+		}
+	case "g":
+		m.sCursor = 0
+	case "G":
+		m.sCursor = max(0, len(m.strategies)-1)
+	}
+	return m, nil
+}
+
+// Matrix helpers
+
+func partitionGoals(goals []Goal) [4][]Goal {
+	var q [4][]Goal
+	for _, g := range goals {
+		idx := 3 // Q4: not important, not urgent
+		if g.Important && g.Urgent {
+			idx = 0 // Q1
+		} else if g.Important {
+			idx = 1 // Q2
+		} else if g.Urgent {
+			idx = 2 // Q3
+		}
+		q[idx] = append(q[idx], g)
+	}
+	return q
+}
+
+func partitionStrategies(strats []Strategy) [4][]Strategy {
+	var q [4][]Strategy
+	for _, s := range strats {
+		idx := 3
+		if s.Important && s.Urgent {
+			idx = 0
+		} else if s.Important {
+			idx = 1
+		} else if s.Urgent {
+			idx = 2
+		}
+		q[idx] = append(q[idx], s)
+	}
+	return q
+}
+
+func (m tuiModel) updateGoalsMatrix(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	quads := partitionGoals(m.activeGoals)
+	switch msg.String() {
+	case "h", "left":
+		if m.mQuadrant == 1 {
+			m.mQuadrant = 0
+		} else if m.mQuadrant == 3 {
+			m.mQuadrant = 2
+		}
+		m.mCursor = 0
+	case "l", "right":
+		if m.mQuadrant == 0 {
+			m.mQuadrant = 1
+		} else if m.mQuadrant == 2 {
+			m.mQuadrant = 3
+		}
+		m.mCursor = 0
+	case "j", "down":
+		if m.mQuadrant < 2 {
+			// Check if we should move down to Q3/Q4
+			if m.mCursor < len(quads[m.mQuadrant])-1 {
+				m.mCursor++
+			} else {
+				m.mQuadrant += 2
+				m.mCursor = 0
+			}
+		} else {
+			if m.mCursor < len(quads[m.mQuadrant])-1 {
+				m.mCursor++
+			}
+		}
+	case "k", "up":
+		if m.mCursor > 0 {
+			m.mCursor--
+		} else if m.mQuadrant >= 2 {
+			m.mQuadrant -= 2
+			if len(quads[m.mQuadrant]) > 0 {
+				m.mCursor = len(quads[m.mQuadrant]) - 1
+			}
+		}
+	case "x":
+		if g := m.matrixSelectedGoal(quads); g != nil {
+			if g.Completed {
+				UncompleteGoal(m.db, g.ID)
+			} else {
+				CompleteGoal(m.db, g.ID, nil)
+			}
+			m.loadActiveGoals()
+		}
+	case "i":
+		if g := m.matrixSelectedGoal(quads); g != nil {
+			UpdateGoal(m.db, g.ID, g.Text, g.StrategyID, !g.Important, g.Urgent)
+			m.loadActiveGoals()
+			m.mCursor = 0
+		}
+	case "u":
+		if g := m.matrixSelectedGoal(quads); g != nil {
+			UpdateGoal(m.db, g.ID, g.Text, g.StrategyID, g.Important, !g.Urgent)
+			m.loadActiveGoals()
+			m.mCursor = 0
+		}
+	case "d":
+		if g := m.matrixSelectedGoal(quads); g != nil {
+			DeleteGoal(m.db, g.ID)
+			m.loadActiveGoals()
+			m.mCursor = 0
+		}
+	}
+	// Clamp cursor
+	quads = partitionGoals(m.activeGoals)
+	if m.mCursor >= len(quads[m.mQuadrant]) {
+		m.mCursor = max(0, len(quads[m.mQuadrant])-1)
+	}
+	return m, nil
+}
+
+func (m tuiModel) matrixSelectedGoal(quads [4][]Goal) *Goal {
+	q := quads[m.mQuadrant]
+	if m.mCursor < len(q) {
+		return &q[m.mCursor]
+	}
+	return nil
+}
+
+func (m tuiModel) updateStratsMatrix(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	quads := partitionStrategies(m.activeStrats)
+	switch msg.String() {
+	case "h", "left":
+		if m.smQuadrant == 1 {
+			m.smQuadrant = 0
+		} else if m.smQuadrant == 3 {
+			m.smQuadrant = 2
+		}
+		m.smCursor = 0
+	case "l", "right":
+		if m.smQuadrant == 0 {
+			m.smQuadrant = 1
+		} else if m.smQuadrant == 2 {
+			m.smQuadrant = 3
+		}
+		m.smCursor = 0
+	case "j", "down":
+		if m.smQuadrant < 2 {
+			if m.smCursor < len(quads[m.smQuadrant])-1 {
+				m.smCursor++
+			} else {
+				m.smQuadrant += 2
+				m.smCursor = 0
+			}
+		} else {
+			if m.smCursor < len(quads[m.smQuadrant])-1 {
+				m.smCursor++
+			}
+		}
+	case "k", "up":
+		if m.smCursor > 0 {
+			m.smCursor--
+		} else if m.smQuadrant >= 2 {
+			m.smQuadrant -= 2
+			if len(quads[m.smQuadrant]) > 0 {
+				m.smCursor = len(quads[m.smQuadrant]) - 1
+			}
+		}
+	case "i":
+		q := quads[m.smQuadrant]
+		if m.smCursor < len(q) {
+			s := q[m.smCursor]
+			UpdateStrategy(m.db, s.ID, s.Title, s.Description, !s.Important, s.Urgent)
+			m.loadActiveStrats()
+			m.smCursor = 0
+		}
+	case "u":
+		q := quads[m.smQuadrant]
+		if m.smCursor < len(q) {
+			s := q[m.smCursor]
+			UpdateStrategy(m.db, s.ID, s.Title, s.Description, s.Important, !s.Urgent)
+			m.loadActiveStrats()
+			m.smCursor = 0
+		}
+	case "d":
+		q := quads[m.smQuadrant]
+		if m.smCursor < len(q) {
+			s := q[m.smCursor]
+			DeleteStrategy(m.db, s.ID)
+			m.loadActiveStrats()
+			m.smCursor = 0
+		}
+	}
+	quads = partitionStrategies(m.activeStrats)
+	if m.smCursor >= len(quads[m.smQuadrant]) {
+		m.smCursor = max(0, len(quads[m.smQuadrant])-1)
 	}
 	return m, nil
 }
@@ -320,7 +695,14 @@ func (m *tuiModel) navDay(dir int) {
 }
 
 func (m tuiModel) entryHeight(i int) int {
-	// title line + bullet lines + blank line
+	// title line + bullet lines + context line (if enriched) + blank line
+	if i < len(m.enriched) {
+		h := 1 + len(m.enriched[i].Bullets) + 1
+		if m.enriched[i].GoalText != nil {
+			h++
+		}
+		return h
+	}
 	return 1 + len(m.entries[i].Bullets) + 1
 }
 
@@ -363,12 +745,44 @@ func (m tuiModel) View() string {
 		header += " (today)"
 	}
 
+	// Build tab bar: entries | goals [list|matrix] | strategies [list|matrix]
 	entriesTab := tabInactive.Render("entries")
-	goalsTab := tabInactive.Render("goals")
-	if m.view == viewEntries {
+	goalsLabel := "goals"
+	stratLabel := "strategies"
+
+	top := m.topView()
+	if top == "entries" {
 		entriesTab = tabActive.Render("entries")
+	}
+
+	// Goals sub-tabs
+	goalsListSub := tabInactive.Render("list")
+	goalsMatrixSub := tabInactive.Render("matrix")
+	if top == "goals" {
+		goalsLabel = tabActive.Render("goals") + " "
+		if m.view == viewGoalsList {
+			goalsListSub = tabActive.Render("list")
+		} else {
+			goalsMatrixSub = tabActive.Render("matrix")
+		}
+		goalsLabel += goalsListSub + "|" + goalsMatrixSub
 	} else {
-		goalsTab = tabActive.Render("goals")
+		goalsLabel = tabInactive.Render("goals")
+	}
+
+	// Strategy sub-tabs
+	stratListSub := tabInactive.Render("list")
+	stratMatrixSub := tabInactive.Render("matrix")
+	if top == "strategies" {
+		stratLabel = tabActive.Render("strats") + " "
+		if m.view == viewStratList {
+			stratListSub = tabActive.Render("list")
+		} else {
+			stratMatrixSub = tabActive.Render("matrix")
+		}
+		stratLabel += stratListSub + "|" + stratMatrixSub
+	} else {
+		stratLabel = tabInactive.Render("strats")
 	}
 
 	// Goals summary badge
@@ -383,15 +797,25 @@ func (m tuiModel) View() string {
 		goalsBadge = hoursStyle.Render(fmt.Sprintf("  [%d/%d goals]", done, len(m.goals)))
 	}
 
-	fmt.Fprintf(&b, " %s  %s  %s | %s%s\n\n",
-		titleStyle.Render("hrs"), header, entriesTab, goalsTab, goalsBadge)
+	fmt.Fprintf(&b, " %s  %s  %s | %s | %s%s\n\n",
+		titleStyle.Render("hrs"), header, entriesTab, goalsLabel, stratLabel, goalsBadge)
 
+	// Content
 	if m.linking {
 		m.renderLinking(&b)
-	} else if m.view == viewGoals {
-		m.renderGoals(&b)
 	} else {
-		m.renderEntries(&b)
+		switch m.view {
+		case viewGoalsList:
+			m.renderGoals(&b)
+		case viewGoalsMatrix:
+			m.renderGoalsMatrix(&b)
+		case viewStratList:
+			m.renderStratList(&b)
+		case viewStratMatrix:
+			m.renderStratMatrix(&b)
+		default:
+			m.renderEntries(&b)
+		}
 	}
 
 	// Status message
@@ -402,17 +826,26 @@ func (m tuiModel) View() string {
 	// Footer
 	if m.linking {
 		b.WriteString(helpStyle.Render("  j/k scroll  space toggle  enter confirm  esc skip  q cancel"))
-	} else if m.view == viewGoals {
-		b.WriteString(helpStyle.Render("  j/k scroll  x toggle done  d delete  h/l day  tab entries  t today  r refresh  q quit"))
 	} else {
-		b.WriteString(helpStyle.Render("  j/k scroll  h/l day  d delete  e edit  tab goals  g/G top/btm  t today  r refresh  q quit"))
+		switch m.view {
+		case viewGoalsList:
+			b.WriteString(helpStyle.Render("  j/k scroll  x done  i/u priority  d delete  h/l day  m matrix  tab strats  t today  r refresh  q quit"))
+		case viewGoalsMatrix:
+			b.WriteString(helpStyle.Render("  j/k scroll  h/l quadrant  x done  i/u priority  d delete  m list  tab strats  r refresh  q quit"))
+		case viewStratList:
+			b.WriteString(helpStyle.Render("  j/k scroll  i/u priority  d delete  m matrix  tab entries  r refresh  q quit"))
+		case viewStratMatrix:
+			b.WriteString(helpStyle.Render("  j/k scroll  h/l quadrant  i/u priority  d delete  m list  tab entries  r refresh  q quit"))
+		default:
+			b.WriteString(helpStyle.Render("  j/k scroll  h/l day  d delete  e edit  tab goals  g/G top/btm  t today  r refresh  q quit"))
+		}
 	}
 
 	return b.String()
 }
 
 func (m tuiModel) renderEntries(b *strings.Builder) {
-	if len(m.entries) == 0 {
+	if len(m.enriched) == 0 {
 		b.WriteString(hoursStyle.Render("  No entries.\n"))
 		return
 	}
@@ -420,7 +853,7 @@ func (m tuiModel) renderEntries(b *strings.Builder) {
 	vh := m.viewHeight()
 	end := m.offset
 	visibleLines := 0
-	for end < len(m.entries) {
+	for end < len(m.enriched) {
 		h := m.entryHeight(end)
 		if visibleLines+h > vh {
 			break
@@ -428,11 +861,11 @@ func (m tuiModel) renderEntries(b *strings.Builder) {
 		visibleLines += h
 		end++
 	}
-	if end == m.offset && end < len(m.entries) {
+	if end == m.offset && end < len(m.enriched) {
 		end++
 	}
 	var totalHours float64
-	for _, e := range m.entries {
+	for _, e := range m.enriched {
 		totalHours += e.HoursEst
 	}
 
@@ -441,7 +874,7 @@ func (m tuiModel) renderEntries(b *strings.Builder) {
 	}
 
 	for i := m.offset; i < end; i++ {
-		e := m.entries[i]
+		e := m.enriched[i]
 		prefix := "  "
 		style := catStyle
 		if i == m.cursor {
@@ -467,16 +900,38 @@ func (m tuiModel) renderEntries(b *strings.Builder) {
 			}
 			fmt.Fprintf(b, "    %s\n", bulletStyle.Render("- "+line))
 		}
+		// Show linked goal/strategy context
+		if e.GoalText != nil {
+			ctx := fmt.Sprintf("-> %q", *e.GoalText)
+			if e.StrategyTitle != nil {
+				ctx += fmt.Sprintf(" | s: %s", *e.StrategyTitle)
+			}
+			fmt.Fprintf(b, "    %s\n", ctxStyle.Render(ctx))
+		}
 		b.WriteByte('\n')
 	}
 
-	if end < len(m.entries) {
-		fmt.Fprintf(b, "%s\n", moreStyle.Render(fmt.Sprintf("  ▼ %d more below", len(m.entries)-end)))
+	if end < len(m.enriched) {
+		fmt.Fprintf(b, "%s\n", moreStyle.Render(fmt.Sprintf("  ▼ %d more below", len(m.enriched)-end)))
 	}
 
 	fmt.Fprintf(b, "%s\n",
-		summaryStyle.Render(fmt.Sprintf("  %d entries  ~%gh  %.1fd", len(m.entries), totalHours, totalHours/8)),
+		summaryStyle.Render(fmt.Sprintf("  %d entries  ~%gh  %.1fd", len(m.enriched), totalHours, totalHours/8)),
 	)
+}
+
+func prioIndicator(important, urgent bool) string {
+	s := ""
+	if important {
+		s += impStyle.Render("!")
+	}
+	if urgent {
+		s += urgStyle.Render("^")
+	}
+	if s != "" {
+		s += " "
+	}
+	return s
 }
 
 func (m tuiModel) renderGoals(b *strings.Builder) {
@@ -491,8 +946,14 @@ func (m tuiModel) renderGoals(b *strings.Builder) {
 			prefix = selStyle.Render("> ")
 		}
 
+		prio := prioIndicator(g.Important, g.Urgent)
+		stratTag := ""
+		if g.StrategyID != nil {
+			stratTag = hoursStyle.Render(fmt.Sprintf(" s#%d", *g.StrategyID))
+		}
+
 		if g.Completed {
-			text := checkStyle.Render("[x] ") + hoursStyle.Render(g.Text)
+			text := checkStyle.Render("[x] ") + prio + hoursStyle.Render(g.Text)
 			if len(g.EntryIDs) > 0 {
 				ids := make([]string, len(g.EntryIDs))
 				for j, eid := range g.EntryIDs {
@@ -500,13 +961,214 @@ func (m tuiModel) renderGoals(b *strings.Builder) {
 				}
 				text += hoursStyle.Render(fmt.Sprintf(" (entries: %s)", strings.Join(ids, ",")))
 			}
+			text += stratTag
 			fmt.Fprintf(b, "%s%s\n", prefix, text)
 		} else {
-			text := openStyle.Render("[ ] ") + g.Text
-			fmt.Fprintf(b, "%s%s %s\n", prefix, text, hoursStyle.Render(fmt.Sprintf("#%d", g.ID)))
+			text := openStyle.Render("[ ] ") + prio + g.Text
+			fmt.Fprintf(b, "%s%s %s%s\n", prefix, text, hoursStyle.Render(fmt.Sprintf("#%d", g.ID)), stratTag)
 		}
 	}
 	b.WriteByte('\n')
+}
+
+func (m tuiModel) renderStratList(b *strings.Builder) {
+	if len(m.strategies) == 0 {
+		b.WriteString(hoursStyle.Render("  No active strategies.\n"))
+		return
+	}
+
+	for i, s := range m.strategies {
+		prefix := "  "
+		if i == m.sCursor {
+			prefix = selStyle.Render("> ")
+		}
+
+		prio := prioIndicator(s.Important, s.Urgent)
+		desc := ""
+		if s.Description != "" {
+			desc = hoursStyle.Render(" - " + s.Description)
+		}
+		fmt.Fprintf(b, "%s%s %s%s%s\n", prefix,
+			hoursStyle.Render(fmt.Sprintf("#%d", s.ID)),
+			prio,
+			titleStyle.Render(s.Title),
+			desc,
+		)
+	}
+	b.WriteByte('\n')
+}
+
+var quadLabels = [4]string{"Q1: Do First", "Q2: Schedule", "Q3: Delegate", "Q4: Eliminate"}
+
+func (m tuiModel) renderGoalsMatrix(b *strings.Builder) {
+	quads := partitionGoals(m.activeGoals)
+	halfW := m.width/2 - 2
+	if halfW < 20 {
+		halfW = 30
+	}
+
+	for row := 0; row < 2; row++ {
+		leftQ := row * 2
+		rightQ := row*2 + 1
+
+		// Quadrant headers
+		leftLabel := quadLabels[leftQ]
+		rightLabel := quadLabels[rightQ]
+		if m.mQuadrant == leftQ {
+			fmt.Fprintf(b, "  %s", quadSelStyle.Render(fmt.Sprintf(" %s (%d) ", leftLabel, len(quads[leftQ]))))
+		} else {
+			fmt.Fprintf(b, "  %s", quadStyle.Render(fmt.Sprintf(" %s (%d) ", leftLabel, len(quads[leftQ]))))
+		}
+		pad := halfW - len(leftLabel) - 8
+		if pad > 0 {
+			b.WriteString(strings.Repeat(" ", pad))
+		}
+		if m.mQuadrant == rightQ {
+			fmt.Fprintf(b, "%s", quadSelStyle.Render(fmt.Sprintf(" %s (%d) ", rightLabel, len(quads[rightQ]))))
+		} else {
+			fmt.Fprintf(b, "%s", quadStyle.Render(fmt.Sprintf(" %s (%d) ", rightLabel, len(quads[rightQ]))))
+		}
+		b.WriteByte('\n')
+
+		// Render items side by side
+		maxItems := max(len(quads[leftQ]), len(quads[rightQ]))
+		if maxItems == 0 {
+			fmt.Fprintf(b, "  %s", hoursStyle.Render("(empty)"))
+			pad := halfW - 5
+			if pad > 0 {
+				b.WriteString(strings.Repeat(" ", pad))
+			}
+			fmt.Fprintf(b, "%s\n", hoursStyle.Render("(empty)"))
+		}
+		for i := 0; i < maxItems; i++ {
+			leftStr := m.renderMatrixGoalItem(quads[leftQ], i, leftQ, halfW)
+			rightStr := m.renderMatrixGoalItem(quads[rightQ], i, rightQ, halfW)
+			fmt.Fprintf(b, "%s%s\n", leftStr, rightStr)
+		}
+		if row == 0 {
+			sep := strings.Repeat("─", halfW*2+2)
+			b.WriteString(hoursStyle.Render("  " + sep))
+			b.WriteByte('\n')
+		}
+	}
+}
+
+func (m tuiModel) renderMatrixGoalItem(goals []Goal, idx, quadrant, colW int) string {
+	if idx >= len(goals) {
+		return strings.Repeat(" ", colW+2)
+	}
+	g := goals[idx]
+	isSelected := m.mQuadrant == quadrant && m.mCursor == idx
+
+	prefix := "  "
+	if isSelected {
+		prefix = selStyle.Render("> ")
+	}
+
+	check := openStyle.Render("[ ]")
+	if g.Completed {
+		check = checkStyle.Render("[x]")
+	}
+
+	text := g.Text
+	maxText := colW - 8
+	if maxText < 10 {
+		maxText = 10
+	}
+	if len(text) > maxText {
+		text = text[:maxText-3] + "..."
+	}
+
+	line := fmt.Sprintf("%s%s %s", prefix, check, text)
+	// Pad to column width
+	visible := 4 + len(g.Text)
+	if len(g.Text) > maxText {
+		visible = 4 + maxText
+	}
+	if visible < colW {
+		line += strings.Repeat(" ", colW-visible)
+	}
+	return line
+}
+
+func (m tuiModel) renderStratMatrix(b *strings.Builder) {
+	quads := partitionStrategies(m.activeStrats)
+	halfW := m.width/2 - 2
+	if halfW < 20 {
+		halfW = 30
+	}
+
+	for row := 0; row < 2; row++ {
+		leftQ := row * 2
+		rightQ := row*2 + 1
+
+		leftLabel := quadLabels[leftQ]
+		rightLabel := quadLabels[rightQ]
+		if m.smQuadrant == leftQ {
+			fmt.Fprintf(b, "  %s", quadSelStyle.Render(fmt.Sprintf(" %s (%d) ", leftLabel, len(quads[leftQ]))))
+		} else {
+			fmt.Fprintf(b, "  %s", quadStyle.Render(fmt.Sprintf(" %s (%d) ", leftLabel, len(quads[leftQ]))))
+		}
+		pad := halfW - len(leftLabel) - 8
+		if pad > 0 {
+			b.WriteString(strings.Repeat(" ", pad))
+		}
+		if m.smQuadrant == rightQ {
+			fmt.Fprintf(b, "%s", quadSelStyle.Render(fmt.Sprintf(" %s (%d) ", rightLabel, len(quads[rightQ]))))
+		} else {
+			fmt.Fprintf(b, "%s", quadStyle.Render(fmt.Sprintf(" %s (%d) ", rightLabel, len(quads[rightQ]))))
+		}
+		b.WriteByte('\n')
+
+		maxItems := max(len(quads[leftQ]), len(quads[rightQ]))
+		if maxItems == 0 {
+			fmt.Fprintf(b, "  %s", hoursStyle.Render("(empty)"))
+			pad := halfW - 5
+			if pad > 0 {
+				b.WriteString(strings.Repeat(" ", pad))
+			}
+			fmt.Fprintf(b, "%s\n", hoursStyle.Render("(empty)"))
+		}
+		for i := 0; i < maxItems; i++ {
+			leftStr := m.renderMatrixStratItem(quads[leftQ], i, leftQ, halfW)
+			rightStr := m.renderMatrixStratItem(quads[rightQ], i, rightQ, halfW)
+			fmt.Fprintf(b, "%s%s\n", leftStr, rightStr)
+		}
+		if row == 0 {
+			sep := strings.Repeat("─", halfW*2+2)
+			b.WriteString(hoursStyle.Render("  " + sep))
+			b.WriteByte('\n')
+		}
+	}
+}
+
+func (m tuiModel) renderMatrixStratItem(strats []Strategy, idx, quadrant, colW int) string {
+	if idx >= len(strats) {
+		return strings.Repeat(" ", colW+2)
+	}
+	s := strats[idx]
+	isSelected := m.smQuadrant == quadrant && m.smCursor == idx
+
+	prefix := "  "
+	if isSelected {
+		prefix = selStyle.Render("> ")
+	}
+
+	text := s.Title
+	maxText := colW - 6
+	if maxText < 10 {
+		maxText = 10
+	}
+	if len(text) > maxText {
+		text = text[:maxText-3] + "..."
+	}
+
+	line := fmt.Sprintf("%s%s %s", prefix, hoursStyle.Render(fmt.Sprintf("#%d", s.ID)), text)
+	visible := 4 + len(fmt.Sprintf("#%d", s.ID)) + 1 + len(text)
+	if visible < colW {
+		line += strings.Repeat(" ", colW-visible)
+	}
+	return line
 }
 
 func (m tuiModel) renderLinking(b *strings.Builder) {
