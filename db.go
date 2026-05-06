@@ -406,6 +406,29 @@ func InsertStrategy(db *sql.DB, title, description string, important, urgent boo
 	return res.LastInsertId()
 }
 
+// GetStrategiesForDate returns active strategies plus any completed/archived on the given date.
+func GetStrategiesForDate(db *sql.DB, date string) ([]Strategy, error) {
+	rows, err := db.Query(
+		`SELECT id, title, description, status, created_at, completed_at, important, urgent
+		 FROM strategies
+		 WHERE status = 'active' OR DATE(completed_at) = ?
+		 ORDER BY id`, date,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Strategy
+	for rows.Next() {
+		var s Strategy
+		if err := rows.Scan(&s.ID, &s.Title, &s.Description, &s.Status, &s.CreatedAt, &s.CompletedAt, &s.Important, &s.Urgent); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 func GetStrategies(db *sql.DB, status string) ([]Strategy, error) {
 	q := `SELECT id, title, description, status, created_at, completed_at, important, urgent FROM strategies`
 	var args []any

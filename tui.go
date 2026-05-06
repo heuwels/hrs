@@ -123,7 +123,7 @@ func (m *tuiModel) loadGoals() {
 }
 
 func (m *tuiModel) loadStrategies() {
-	m.strategies, _ = GetStrategies(m.db, "active")
+	m.strategies, _ = GetStrategiesForDate(m.db, m.date)
 	if m.sCursor >= len(m.strategies) {
 		m.sCursor = max(0, len(m.strategies)-1)
 	}
@@ -132,14 +132,14 @@ func (m *tuiModel) loadStrategies() {
 func (m *tuiModel) loadActiveGoals() {
 	m.activeGoals, _ = GetActiveGoals(m.db)
 	// Clamp cursor — quadrant contents may have changed
-	quads := partitionGoals(m.activeGoals)
+	quads := partitionGoals(m.goals)
 	if m.mCursor >= len(quads[m.mQuadrant]) {
 		m.mCursor = max(0, len(quads[m.mQuadrant])-1)
 	}
 }
 
 func (m *tuiModel) loadActiveStrats() {
-	m.activeStrats, _ = GetStrategies(m.db, "active")
+	m.activeStrats, _ = GetStrategiesForDate(m.db, m.date)
 	quads := partitionStrategies(m.activeStrats)
 	if m.smCursor >= len(quads[m.smQuadrant]) {
 		m.smCursor = max(0, len(quads[m.smQuadrant])-1)
@@ -186,7 +186,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "tab":
-			// Cycle top-level: entries -> goals -> strategies -> entries
+			// Cycle top-level forward: entries -> goals -> strategies -> entries
 			switch m.topView() {
 			case "entries":
 				if m.goalsSubMatrix {
@@ -194,6 +194,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					m.view = viewGoalsList
 				}
+				m.loadActiveGoals()
 			case "goals":
 				if m.stratSubMatrix {
 					m.view = viewStratMatrix
@@ -204,6 +205,27 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loadActiveStrats()
 			case "strategies":
 				m.view = viewEntries
+			}
+		case "shift+tab":
+			// Cycle top-level backward: entries -> strategies -> goals -> entries
+			switch m.topView() {
+			case "entries":
+				if m.stratSubMatrix {
+					m.view = viewStratMatrix
+				} else {
+					m.view = viewStratList
+				}
+				m.loadStrategies()
+				m.loadActiveStrats()
+			case "goals":
+				m.view = viewEntries
+			case "strategies":
+				if m.goalsSubMatrix {
+					m.view = viewGoalsMatrix
+				} else {
+					m.view = viewGoalsList
+				}
+				m.loadActiveGoals()
 			}
 		case "m":
 			// Toggle sub-view: list <-> matrix (only in goals/strategies)
@@ -255,9 +277,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m tuiModel) updateEntries(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "h", "left":
+	case "h":
 		m.navDay(-1)
-	case "l", "right":
+	case "l":
 		m.navDay(1)
 	case "j", "down":
 		if m.cursor < len(m.entries)-1 {
@@ -298,9 +320,9 @@ func (m tuiModel) updateEntries(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m tuiModel) updateGoals(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "h", "left":
+	case "h":
 		m.navDay(-1)
-	case "l", "right":
+	case "l":
 		m.navDay(1)
 	case "j", "down":
 		if m.gCursor < len(m.goals)-1 {
@@ -374,6 +396,12 @@ func (m tuiModel) updateGoals(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m tuiModel) updateStrats(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "h":
+		m.navDay(-1)
+		m.loadStrategies()
+	case "l":
+		m.navDay(1)
+		m.loadStrategies()
 	case "j", "down":
 		if m.sCursor < len(m.strategies)-1 {
 			m.sCursor++
@@ -457,16 +485,22 @@ func partitionStrategies(strats []Strategy) [4][]Strategy {
 }
 
 func (m tuiModel) updateGoalsMatrix(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	quads := partitionGoals(m.activeGoals)
+	quads := partitionGoals(m.goals)
 	switch msg.String() {
-	case "h", "left":
+	case "h":
+		m.navDay(-1) // navDay reloads m.goals
+		m.mCursor = 0
+	case "l":
+		m.navDay(1)
+		m.mCursor = 0
+	case "left":
 		if m.mQuadrant == 1 {
 			m.mQuadrant = 0
 		} else if m.mQuadrant == 3 {
 			m.mQuadrant = 2
 		}
 		m.mCursor = 0
-	case "l", "right":
+	case "right":
 		if m.mQuadrant == 0 {
 			m.mQuadrant = 1
 		} else if m.mQuadrant == 2 {
@@ -500,32 +534,46 @@ func (m tuiModel) updateGoalsMatrix(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if g := m.matrixSelectedGoal(quads); g != nil {
 			if g.Completed {
 				UncompleteGoal(m.db, g.ID)
+				m.loadGoals()
 			} else {
+				// If there are entries for this date, enter linking mode
+				if len(m.entries) > 0 {
+					// Find this goal in the date-scoped goals list for linking
+					for i, dg := range m.goals {
+						if dg.ID == g.ID {
+							m.gCursor = i
+							break
+						}
+					}
+					m.linking = true
+					m.linkIDs = nil
+					m.cursor = 0
+					m.offset = 0
+					m.msg = "select entries to link (space to toggle, enter to confirm, esc to skip)"
+					return m, nil
+				}
 				CompleteGoal(m.db, g.ID, nil)
+				m.loadGoals()
 			}
-			m.loadActiveGoals()
 		}
 	case "i":
 		if g := m.matrixSelectedGoal(quads); g != nil {
 			UpdateGoal(m.db, g.ID, g.Text, g.StrategyID, !g.Important, g.Urgent)
-			m.loadActiveGoals()
-			m.mCursor = 0
+			m.loadGoals()
 		}
 	case "u":
 		if g := m.matrixSelectedGoal(quads); g != nil {
 			UpdateGoal(m.db, g.ID, g.Text, g.StrategyID, g.Important, !g.Urgent)
-			m.loadActiveGoals()
-			m.mCursor = 0
+			m.loadGoals()
 		}
 	case "d":
 		if g := m.matrixSelectedGoal(quads); g != nil {
 			DeleteGoal(m.db, g.ID)
-			m.loadActiveGoals()
-			m.mCursor = 0
+			m.loadGoals()
 		}
 	}
 	// Clamp cursor
-	quads = partitionGoals(m.activeGoals)
+	quads = partitionGoals(m.goals)
 	if m.mCursor >= len(quads[m.mQuadrant]) {
 		m.mCursor = max(0, len(quads[m.mQuadrant])-1)
 	}
@@ -543,14 +591,22 @@ func (m tuiModel) matrixSelectedGoal(quads [4][]Goal) *Goal {
 func (m tuiModel) updateStratsMatrix(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	quads := partitionStrategies(m.activeStrats)
 	switch msg.String() {
-	case "h", "left":
+	case "h":
+		m.navDay(-1)
+		m.loadActiveStrats()
+		m.smCursor = 0
+	case "l":
+		m.navDay(1)
+		m.loadActiveStrats()
+		m.smCursor = 0
+	case "left":
 		if m.smQuadrant == 1 {
 			m.smQuadrant = 0
 		} else if m.smQuadrant == 3 {
 			m.smQuadrant = 2
 		}
 		m.smCursor = 0
-	case "l", "right":
+	case "right":
 		if m.smQuadrant == 0 {
 			m.smQuadrant = 1
 		} else if m.smQuadrant == 2 {
@@ -645,6 +701,7 @@ func (m tuiModel) updateLinking(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			g := m.goals[m.gCursor]
 			CompleteGoal(m.db, g.ID, m.linkIDs)
 			m.loadGoals()
+			m.loadActiveGoals()
 			n := len(m.linkIDs)
 			m.msg = fmt.Sprintf("completed goal %d (linked %d entries)", g.ID, n)
 		}
@@ -656,6 +713,7 @@ func (m tuiModel) updateLinking(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			g := m.goals[m.gCursor]
 			CompleteGoal(m.db, g.ID, nil)
 			m.loadGoals()
+			m.loadActiveGoals()
 			m.msg = fmt.Sprintf("completed goal %d", g.ID)
 		}
 		m.linking = false
@@ -831,11 +889,11 @@ func (m tuiModel) View() string {
 		case viewGoalsList:
 			b.WriteString(helpStyle.Render("  j/k scroll  x done  i/u priority  d delete  h/l day  m matrix  tab strats  t today  r refresh  q quit"))
 		case viewGoalsMatrix:
-			b.WriteString(helpStyle.Render("  j/k scroll  h/l quadrant  x done  i/u priority  d delete  m list  tab strats  r refresh  q quit"))
+			b.WriteString(helpStyle.Render("  j/k scroll  arrows quadrant  x done  i/u priority  d delete  h/l day  m list  tab strats  r refresh  q quit"))
 		case viewStratList:
-			b.WriteString(helpStyle.Render("  j/k scroll  i/u priority  d delete  m matrix  tab entries  r refresh  q quit"))
+			b.WriteString(helpStyle.Render("  j/k scroll  i/u priority  d delete  h/l day  m matrix  tab entries  r refresh  q quit"))
 		case viewStratMatrix:
-			b.WriteString(helpStyle.Render("  j/k scroll  h/l quadrant  i/u priority  d delete  m list  tab entries  r refresh  q quit"))
+			b.WriteString(helpStyle.Render("  j/k scroll  arrows quadrant  i/u priority  d delete  h/l day  m list  tab entries  r refresh  q quit"))
 		default:
 			b.WriteString(helpStyle.Render("  j/k scroll  h/l day  d delete  e edit  tab goals  g/G top/btm  t today  r refresh  q quit"))
 		}
@@ -1001,7 +1059,7 @@ func (m tuiModel) renderStratList(b *strings.Builder) {
 var quadLabels = [4]string{"Q1: Do First", "Q2: Schedule", "Q3: Delegate", "Q4: Eliminate"}
 
 func (m tuiModel) renderGoalsMatrix(b *strings.Builder) {
-	quads := partitionGoals(m.activeGoals)
+	quads := partitionGoals(m.goals)
 	halfW := m.width/2 - 2
 	if halfW < 20 {
 		halfW = 30

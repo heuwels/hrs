@@ -108,6 +108,36 @@ func TestTUITabCycling(t *testing.T) {
 	}
 }
 
+func TestTUIShiftTabCycling(t *testing.T) {
+	m := testDB(t)
+	tab := specialKey(tea.KeyTab)
+	stab := specialKey(tea.KeyShiftTab)
+
+	// entries -> shift+tab -> strategies
+	r := asModel(send(m, stab))
+	if r.view != viewStratList {
+		t.Errorf("expected viewStratList, got %d", r.view)
+	}
+
+	// strategies -> shift+tab -> goals
+	r = asModel(send(r, stab))
+	if r.view != viewGoalsList {
+		t.Errorf("expected viewGoalsList, got %d", r.view)
+	}
+
+	// goals -> shift+tab -> entries
+	r = asModel(send(r, stab))
+	if r.view != viewEntries {
+		t.Errorf("expected viewEntries, got %d", r.view)
+	}
+
+	// tab forward then shift+tab back should return to same place
+	r = asModel(send(m, tab, stab))
+	if r.view != viewEntries {
+		t.Errorf("expected viewEntries after tab+shift+tab, got %d", r.view)
+	}
+}
+
 func TestTUISubViewToggle(t *testing.T) {
 	m := testDB(t)
 	tab := specialKey(tea.KeyTab)
@@ -425,6 +455,8 @@ func TestTUIMatrixQuadrantNavigation(t *testing.T) {
 	m := testDB(t)
 	seedGoals(t, m)
 	tab := specialKey(tea.KeyTab)
+	right := specialKey(tea.KeyRight)
+	left := specialKey(tea.KeyLeft)
 
 	// Go to goals matrix
 	r := asModel(send(m, tab, key('m')))
@@ -435,20 +467,20 @@ func TestTUIMatrixQuadrantNavigation(t *testing.T) {
 		t.Fatalf("should start in Q1 (quadrant 0)")
 	}
 
-	// l moves to Q2
-	r = asModel(send(r, key('l')))
+	// right arrow moves to Q2
+	r = asModel(send(r, right))
 	if r.mQuadrant != 1 {
 		t.Errorf("expected quadrant 1, got %d", r.mQuadrant)
 	}
 
-	// l from Q2 stays (no Q beyond right)
-	r = asModel(send(r, key('l')))
+	// right from Q2 stays (no Q beyond right)
+	r = asModel(send(r, right))
 	if r.mQuadrant != 1 {
 		t.Errorf("expected quadrant 1, got %d", r.mQuadrant)
 	}
 
-	// h moves back to Q1
-	r = asModel(send(r, key('h')))
+	// left arrow moves back to Q1
+	r = asModel(send(r, left))
 	if r.mQuadrant != 0 {
 		t.Errorf("expected quadrant 0, got %d", r.mQuadrant)
 	}
@@ -473,7 +505,7 @@ func TestTUIMatrixToggleMovesBetweenQuadrants(t *testing.T) {
 
 	// Go to goals matrix, toggle importance on Q1 item (important+urgent -> urgent only = Q3)
 	r := asModel(send(m, tab, key('m'), key('i')))
-	quads := partitionGoals(r.activeGoals)
+	quads := partitionGoals(r.goals)
 	if len(quads[0]) != 0 {
 		t.Errorf("Q1 should be empty after toggling importance, got %d items", len(quads[0]))
 	}
@@ -486,11 +518,39 @@ func TestTUIMatrixDeleteGoal(t *testing.T) {
 	m := testDB(t)
 	seedGoals(t, m)
 	tab := specialKey(tea.KeyTab)
-	initialActive := len(m.activeGoals)
+	initialCount := len(m.goals)
 
 	r := asModel(send(m, tab, key('m'), key('d')))
-	if len(r.activeGoals) != initialActive-1 {
-		t.Errorf("expected %d active goals after delete, got %d", initialActive-1, len(r.activeGoals))
+	if len(r.goals) != initialCount-1 {
+		t.Errorf("expected %d goals after delete, got %d", initialCount-1, len(r.goals))
+	}
+}
+
+func TestTUIMatrixCompletionWithLinking(t *testing.T) {
+	m := testDB(t)
+	seedEntries(t, m) // entries on 2026-05-06
+	seedGoals(t, m)   // goals on 2026-05-06
+	tab := specialKey(tea.KeyTab)
+
+	// Go to goals matrix, press x on Q1 goal -- should enter linking mode
+	r := asModel(send(m, tab, key('m'), key('x')))
+	if !r.linking {
+		t.Fatal("should be in linking mode from matrix view")
+	}
+
+	// Select first entry with space, confirm with enter
+	r = asModel(send(r, specialKey(tea.KeySpace), specialKey(tea.KeyEnter)))
+	if r.linking {
+		t.Error("should have exited linking mode")
+	}
+
+	// The goal should be completed and removed from active goals
+	g, _ := GetGoalByID(m.db, 1)
+	if !g.Completed {
+		t.Error("goal should be completed")
+	}
+	if len(g.EntryIDs) == 0 {
+		t.Error("goal should have linked entries")
 	}
 }
 
@@ -558,23 +618,41 @@ func TestTUIDayNavigation(t *testing.T) {
 	}
 }
 
-func TestTUIDayNavDisabledInMatrix(t *testing.T) {
+func TestTUIMatrixDayNavigation(t *testing.T) {
 	m := testDB(t)
 	InsertEntry(m.db, &Entry{Date: "2026-05-05", Time: "09:00", Category: "dev", Title: "X", Bullets: []string{"x"}, HoursEst: 1})
 	InsertEntry(m.db, &Entry{Date: "2026-05-06", Time: "09:00", Category: "dev", Title: "Y", Bullets: []string{"y"}, HoursEst: 1})
+	InsertGoal(m.db, "2026-05-05", "Old goal", nil, true, false)
+	InsertGoal(m.db, "2026-05-06", "Today goal", nil, false, true)
 	m.loadDates()
 	m.loadEntries()
-	seedGoals(t, m)
+	m.loadGoals()
 	tab := specialKey(tea.KeyTab)
 
-	// Go to goals matrix
+	// Go to goals matrix -- should show today's goals
 	r := asModel(send(m, tab, key('m')))
-	origDate := r.date
+	if r.date != "2026-05-06" {
+		t.Fatalf("should start on 2026-05-06, got %s", r.date)
+	}
 
-	// h/l should navigate quadrants, not days
+	// h navigates to older day
 	r = asModel(send(r, key('h')))
-	if r.date != origDate {
-		t.Errorf("date should not change in matrix view, got %s", r.date)
+	if r.date != "2026-05-05" {
+		t.Errorf("expected 2026-05-05 after h, got %s", r.date)
+	}
+
+	// Matrix should now show the old day's goals
+	quads := partitionGoals(r.goals)
+	found := false
+	for _, q := range quads {
+		for _, g := range q {
+			if g.Text == "Old goal" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("matrix should show 'Old goal' after navigating to 2026-05-05")
 	}
 }
 
