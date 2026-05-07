@@ -34,3 +34,6 @@ release:
   github:
     owner: heuwels
     name: hrs
+  # Tags with -alpha, -beta, or -rc suffixes (e.g. v1.4.0-alpha.1)
+  # are published as GitHub pre-releases.
+  prerelease: auto
