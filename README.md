@@ -61,6 +61,7 @@ hrs tui     [date]                                  # interactive TUI
 hrs edit    <id> -t "new title" -e 3                # update an entry
 hrs rm      <id>                                    # delete an entry
 hrs export  --format csv --from 2026-04-01          # export as JSON or CSV
+hrs ls      --ticket PROMO --from 2026-01-01        # filter entries by goal/strategy ticket
 hrs categories                                      # list all categories
 hrs serve   [--port 9746]                           # start API server
 hrs migrate --dir ~/old-worklogs/                   # import markdown files
@@ -215,6 +216,22 @@ curl -s -X POST http://localhost:9746/entries -d '{
 - **Log during work** — not just at the end of the session
 - **Be generous** — when in doubt, log it
 ````
+
+## Ticket references and reporting
+
+Goals and strategies can carry a `ticket_ref` — a free-form string pointing at an external work item (Promotheus, Jira, Linear, GitHub, anything). `hrs ls --ticket PROMO` and `hrs export --ticket PROMO` then return every entry linked (through a goal) to a goal or strategy whose ticket matches that prefix:
+
+```bash
+hrs strategy add -t "ship pat creation" --ticket PROMO-150
+hrs goals add -s 1 --ticket PROMO-151 "filament ui"
+hrs log -c dev -t "filament wired up" -b "form;validation;tests" -e 4
+hrs goals done <goal_id> -e <entry_id>
+
+# at claim time
+hrs export --ticket PROMO --from 2026-01-01 --to 2026-12-31 --format csv
+```
+
+The R&D motivation: tag any goal or strategy that represents experimental development with the relevant ticket, link entries as you complete goals, then export by ticket prefix to produce a defensible timesheet for the claim. See [`docs/goals.md`](docs/goals.md#ticket-references) for the full rules (matching, inheritance, clearing).
 
 ## A note on hours estimates
 

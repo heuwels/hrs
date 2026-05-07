@@ -357,7 +357,7 @@ func (m tuiModel) updateGoals(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "i":
 		if len(m.goals) > 0 && m.gCursor < len(m.goals) {
 			g := m.goals[m.gCursor]
-			UpdateGoal(m.db, g.ID, g.Text, g.StrategyID, !g.Important, g.Urgent)
+			UpdateGoal(m.db, g.ID, g.Text, g.StrategyID, !g.Important, g.Urgent, g.TicketRef)
 			m.loadGoals()
 			if g.Important {
 				m.msg = fmt.Sprintf("goal %d: removed important", g.ID)
@@ -368,7 +368,7 @@ func (m tuiModel) updateGoals(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "u":
 		if len(m.goals) > 0 && m.gCursor < len(m.goals) {
 			g := m.goals[m.gCursor]
-			UpdateGoal(m.db, g.ID, g.Text, g.StrategyID, g.Important, !g.Urgent)
+			UpdateGoal(m.db, g.ID, g.Text, g.StrategyID, g.Important, !g.Urgent, g.TicketRef)
 			m.loadGoals()
 			if g.Urgent {
 				m.msg = fmt.Sprintf("goal %d: removed urgent", g.ID)
@@ -413,7 +413,7 @@ func (m tuiModel) updateStrats(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "i":
 		if len(m.strategies) > 0 && m.sCursor < len(m.strategies) {
 			s := m.strategies[m.sCursor]
-			UpdateStrategy(m.db, s.ID, s.Title, s.Description, !s.Important, s.Urgent)
+			UpdateStrategy(m.db, s.ID, s.Title, s.Description, !s.Important, s.Urgent, s.TicketRef)
 			m.loadStrategies()
 			if s.Important {
 				m.msg = fmt.Sprintf("strategy %d: removed important", s.ID)
@@ -424,7 +424,7 @@ func (m tuiModel) updateStrats(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "u":
 		if len(m.strategies) > 0 && m.sCursor < len(m.strategies) {
 			s := m.strategies[m.sCursor]
-			UpdateStrategy(m.db, s.ID, s.Title, s.Description, s.Important, !s.Urgent)
+			UpdateStrategy(m.db, s.ID, s.Title, s.Description, s.Important, !s.Urgent, s.TicketRef)
 			m.loadStrategies()
 			if s.Urgent {
 				m.msg = fmt.Sprintf("strategy %d: removed urgent", s.ID)
@@ -558,12 +558,12 @@ func (m tuiModel) updateGoalsMatrix(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "i":
 		if g := m.matrixSelectedGoal(quads); g != nil {
-			UpdateGoal(m.db, g.ID, g.Text, g.StrategyID, !g.Important, g.Urgent)
+			UpdateGoal(m.db, g.ID, g.Text, g.StrategyID, !g.Important, g.Urgent, g.TicketRef)
 			m.loadGoals()
 		}
 	case "u":
 		if g := m.matrixSelectedGoal(quads); g != nil {
-			UpdateGoal(m.db, g.ID, g.Text, g.StrategyID, g.Important, !g.Urgent)
+			UpdateGoal(m.db, g.ID, g.Text, g.StrategyID, g.Important, !g.Urgent, g.TicketRef)
 			m.loadGoals()
 		}
 	case "d":
@@ -639,7 +639,7 @@ func (m tuiModel) updateStratsMatrix(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		q := quads[m.smQuadrant]
 		if m.smCursor < len(q) {
 			s := q[m.smCursor]
-			UpdateStrategy(m.db, s.ID, s.Title, s.Description, !s.Important, s.Urgent)
+			UpdateStrategy(m.db, s.ID, s.Title, s.Description, !s.Important, s.Urgent, s.TicketRef)
 			m.loadActiveStrats()
 			m.smCursor = 0
 		}
@@ -647,7 +647,7 @@ func (m tuiModel) updateStratsMatrix(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		q := quads[m.smQuadrant]
 		if m.smCursor < len(q) {
 			s := q[m.smCursor]
-			UpdateStrategy(m.db, s.ID, s.Title, s.Description, s.Important, !s.Urgent)
+			UpdateStrategy(m.db, s.ID, s.Title, s.Description, s.Important, !s.Urgent, s.TicketRef)
 			m.loadActiveStrats()
 			m.smCursor = 0
 		}
@@ -964,6 +964,9 @@ func (m tuiModel) renderEntries(b *strings.Builder) {
 			if e.StrategyTitle != nil {
 				ctx += fmt.Sprintf(" | s: %s", *e.StrategyTitle)
 			}
+			if t := entryTicket(e); t != "" {
+				ctx += fmt.Sprintf(" [%s]", t)
+			}
 			fmt.Fprintf(b, "    %s\n", ctxStyle.Render(ctx))
 		}
 		b.WriteByte('\n')
@@ -976,6 +979,18 @@ func (m tuiModel) renderEntries(b *strings.Builder) {
 	fmt.Fprintf(b, "%s\n",
 		summaryStyle.Render(fmt.Sprintf("  %d entries  ~%gh  %.1fd", len(m.enriched), totalHours, totalHours/8)),
 	)
+}
+
+// entryTicket returns the goal-level ticket if present, falling back to the
+// strategy-level ticket. Empty string when neither is set.
+func entryTicket(e EnrichedEntry) string {
+	if e.GoalTicketRef != nil {
+		return *e.GoalTicketRef
+	}
+	if e.StrategyTicketRef != nil {
+		return *e.StrategyTicketRef
+	}
+	return ""
 }
 
 func prioIndicator(important, urgent bool) string {
@@ -1009,6 +1024,10 @@ func (m tuiModel) renderGoals(b *strings.Builder) {
 		if g.StrategyID != nil {
 			stratTag = hoursStyle.Render(fmt.Sprintf(" s#%d", *g.StrategyID))
 		}
+		ticketTag := ""
+		if g.TicketRef != nil {
+			ticketTag = hoursStyle.Render(fmt.Sprintf(" [%s]", *g.TicketRef))
+		}
 
 		if g.Completed {
 			text := checkStyle.Render("[x] ") + prio + hoursStyle.Render(g.Text)
@@ -1019,11 +1038,11 @@ func (m tuiModel) renderGoals(b *strings.Builder) {
 				}
 				text += hoursStyle.Render(fmt.Sprintf(" (entries: %s)", strings.Join(ids, ",")))
 			}
-			text += stratTag
+			text += stratTag + ticketTag
 			fmt.Fprintf(b, "%s%s\n", prefix, text)
 		} else {
 			text := openStyle.Render("[ ] ") + prio + g.Text
-			fmt.Fprintf(b, "%s%s %s%s\n", prefix, text, hoursStyle.Render(fmt.Sprintf("#%d", g.ID)), stratTag)
+			fmt.Fprintf(b, "%s%s %s%s%s\n", prefix, text, hoursStyle.Render(fmt.Sprintf("#%d", g.ID)), stratTag, ticketTag)
 		}
 	}
 	b.WriteByte('\n')
@@ -1046,10 +1065,15 @@ func (m tuiModel) renderStratList(b *strings.Builder) {
 		if s.Description != "" {
 			desc = hoursStyle.Render(" - " + s.Description)
 		}
-		fmt.Fprintf(b, "%s%s %s%s%s\n", prefix,
+		ticketTag := ""
+		if s.TicketRef != nil {
+			ticketTag = hoursStyle.Render(fmt.Sprintf(" [%s]", *s.TicketRef))
+		}
+		fmt.Fprintf(b, "%s%s %s%s%s%s\n", prefix,
 			hoursStyle.Render(fmt.Sprintf("#%d", s.ID)),
 			prio,
 			titleStyle.Render(s.Title),
+			ticketTag,
 			desc,
 		)
 	}

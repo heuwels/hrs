@@ -36,7 +36,7 @@ var schema = map[string]any{
 		{
 			"method":      "GET",
 			"path":        "/entries",
-			"description": "List entries. Query params: date (single day), from/to (range, inclusive), category (filter).",
+			"description": "List entries. Query params: date (single day), from/to (range, inclusive), category (filter), ticket (prefix-match goal/strategy ticket_ref; implies range query).",
 		},
 		{
 			"method":      "DELETE",
@@ -52,6 +52,7 @@ var schema = map[string]any{
 				{"name": "strategy_id", "type": "number", "required": false, "description": "Link to a strategic goal"},
 				{"name": "important", "type": "boolean", "required": false, "description": "Mark as important (Eisenhower matrix)"},
 				{"name": "urgent", "type": "boolean", "required": false, "description": "Mark as urgent (Eisenhower matrix)"},
+				{"name": "ticket_ref", "type": "string", "required": false, "description": "External ticket reference (e.g. PROMO-123, ENG-456, GH-org/repo#12). Used to filter entries for time reporting."},
 			},
 		},
 		{
@@ -67,7 +68,7 @@ var schema = map[string]any{
 		{
 			"method":      "PUT",
 			"path":        "/goals/{id}",
-			"description": "Update a goal. Body fields: text, strategy_id, important, urgent (all optional, partial update).",
+			"description": "Update a goal. Body fields: text, strategy_id, important, urgent, ticket_ref (all optional, partial update; ticket_ref:null or \"\" clears).",
 		},
 		{
 			"method":      "PUT",
@@ -97,6 +98,7 @@ var schema = map[string]any{
 				{"name": "description", "type": "string", "required": false, "description": "Longer description of the strategic goal"},
 				{"name": "important", "type": "boolean", "required": false, "description": "Mark as important (Eisenhower matrix)"},
 				{"name": "urgent", "type": "boolean", "required": false, "description": "Mark as urgent (Eisenhower matrix)"},
+				{"name": "ticket_ref", "type": "string", "required": false, "description": "External ticket reference (e.g. PROMO-123). Inherited by entries linked through this strategy's goals for time reporting."},
 			},
 		},
 		{
@@ -112,7 +114,7 @@ var schema = map[string]any{
 		{
 			"method":      "PUT",
 			"path":        "/strategies/{id}",
-			"description": "Update strategy status. Body: {\"status\": \"active|completed|archived\"}.",
+			"description": "Update a strategy. Body fields: status (active|completed|archived), title, description, important, urgent, ticket_ref (all optional, partial update; ticket_ref:null or \"\" clears).",
 		},
 		{
 			"method":      "DELETE",
@@ -135,11 +137,20 @@ func (s *Server) ListEntries(w http.ResponseWriter, r *http.Request) {
 	from := q.Get("from")
 	to := q.Get("to")
 	category := q.Get("category")
+	ticket := q.Get("ticket")
 
 	var entries []Entry
 	var err error
 
-	if from != "" {
+	if ticket != "" {
+		if from == "" {
+			from = "2000-01-01"
+		}
+		if to == "" {
+			to = now().Format("2006-01-02")
+		}
+		entries, err = GetEntriesByTicket(s.db, from, to, ticketLike(ticket), category)
+	} else if from != "" {
 		if to == "" {
 			to = now().Format("2006-01-02")
 		}
@@ -244,11 +255,12 @@ func (s *Server) ListGoals(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) CreateGoal(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Date       string `json:"date"`
-		Text       string `json:"text"`
-		StrategyID *int64 `json:"strategy_id"`
-		Important  bool   `json:"important"`
-		Urgent     bool   `json:"urgent"`
+		Date       string  `json:"date"`
+		Text       string  `json:"text"`
+		StrategyID *int64  `json:"strategy_id"`
+		Important  bool    `json:"important"`
+		Urgent     bool    `json:"urgent"`
+		TicketRef  *string `json:"ticket_ref"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
@@ -258,7 +270,7 @@ func (s *Server) CreateGoal(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "text required"})
 		return
 	}
-	id, err := InsertGoal(s.db, body.Date, body.Text, body.StrategyID, body.Important, body.Urgent)
+	id, err := InsertGoal(s.db, body.Date, body.Text, body.StrategyID, body.Important, body.Urgent, body.TicketRef)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -269,6 +281,9 @@ func (s *Server) CreateGoal(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{"id": id, "date": body.Date, "text": body.Text}
 	if body.StrategyID != nil {
 		resp["strategy_id"] = *body.StrategyID
+	}
+	if body.TicketRef != nil {
+		resp["ticket_ref"] = *body.TicketRef
 	}
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -351,15 +366,22 @@ func (s *Server) UpdateGoalHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
+	// Decode into a raw map first so we can detect ticket_ref:null (clear)
+	// vs absent ticket_ref (don't change).
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
+		return
+	}
 	var body struct {
 		Text       *string `json:"text"`
 		StrategyID *int64  `json:"strategy_id"`
 		Important  *bool   `json:"important"`
 		Urgent     *bool   `json:"urgent"`
+		TicketRef  *string `json:"ticket_ref"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
-		return
+	if rawJSON, _ := json.Marshal(raw); len(rawJSON) > 0 {
+		json.Unmarshal(rawJSON, &body)
 	}
 	if body.Text != nil {
 		g.Text = *body.Text
@@ -373,7 +395,17 @@ func (s *Server) UpdateGoalHandler(w http.ResponseWriter, r *http.Request) {
 	if body.Urgent != nil {
 		g.Urgent = *body.Urgent
 	}
-	if err := UpdateGoal(s.db, id, g.Text, g.StrategyID, g.Important, g.Urgent); err != nil {
+	if _, present := raw["ticket_ref"]; present {
+		// "ticket_ref": null   → clear
+		// "ticket_ref": ""     → clear
+		// "ticket_ref": "FOO"  → set
+		if body.TicketRef == nil || *body.TicketRef == "" {
+			g.TicketRef = nil
+		} else {
+			g.TicketRef = body.TicketRef
+		}
+	}
+	if err := UpdateGoal(s.db, id, g.Text, g.StrategyID, g.Important, g.Urgent, g.TicketRef); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -409,10 +441,11 @@ func (s *Server) ListStrategies(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) CreateStrategy(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Title       string `json:"title"`
-		Description string `json:"description"`
-		Important   bool   `json:"important"`
-		Urgent      bool   `json:"urgent"`
+		Title       string  `json:"title"`
+		Description string  `json:"description"`
+		Important   bool    `json:"important"`
+		Urgent      bool    `json:"urgent"`
+		TicketRef   *string `json:"ticket_ref"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
@@ -422,12 +455,16 @@ func (s *Server) CreateStrategy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "title required"})
 		return
 	}
-	id, err := InsertStrategy(s.db, body.Title, body.Description, body.Important, body.Urgent)
+	id, err := InsertStrategy(s.db, body.Title, body.Description, body.Important, body.Urgent, body.TicketRef)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "title": body.Title})
+	resp := map[string]any{"id": id, "title": body.Title}
+	if body.TicketRef != nil {
+		resp["ticket_ref"] = *body.TicketRef
+	}
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (s *Server) GetStrategyReportHandler(w http.ResponseWriter, r *http.Request) {
@@ -450,24 +487,78 @@ func (s *Server) UpdateStrategyStatusHandler(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
 		return
 	}
-	var body struct {
-		Status string `json:"status"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	// Accept partial updates: status (transitions lifecycle) and/or any
+	// editable fields (title, description, important, urgent, ticket_ref).
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json: " + err.Error()})
 		return
 	}
-	switch body.Status {
-	case "active", "completed", "archived":
-	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be active, completed, or archived"})
-		return
+	var body struct {
+		Status      *string `json:"status"`
+		Title       *string `json:"title"`
+		Description *string `json:"description"`
+		Important   *bool   `json:"important"`
+		Urgent      *bool   `json:"urgent"`
+		TicketRef   *string `json:"ticket_ref"`
 	}
-	if err := UpdateStrategyStatus(s.db, id, body.Status); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
+	if rawJSON, _ := json.Marshal(raw); len(rawJSON) > 0 {
+		json.Unmarshal(rawJSON, &body)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": id, "status": body.Status})
+
+	if body.Status != nil {
+		switch *body.Status {
+		case "active", "completed", "archived":
+		default:
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be active, completed, or archived"})
+			return
+		}
+		if err := UpdateStrategyStatus(s.db, id, *body.Status); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+
+	// Edit any non-status field that was provided.
+	editFields := body.Title != nil || body.Description != nil ||
+		body.Important != nil || body.Urgent != nil
+	_, ticketPresent := raw["ticket_ref"]
+	if editFields || ticketPresent {
+		st, err := GetStrategyByID(s.db, id)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		if body.Title != nil {
+			st.Title = *body.Title
+		}
+		if body.Description != nil {
+			st.Description = *body.Description
+		}
+		if body.Important != nil {
+			st.Important = *body.Important
+		}
+		if body.Urgent != nil {
+			st.Urgent = *body.Urgent
+		}
+		if ticketPresent {
+			if body.TicketRef == nil || *body.TicketRef == "" {
+				st.TicketRef = nil
+			} else {
+				st.TicketRef = body.TicketRef
+			}
+		}
+		if err := UpdateStrategy(s.db, id, st.Title, st.Description, st.Important, st.Urgent, st.TicketRef); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+
+	resp := map[string]any{"id": id}
+	if body.Status != nil {
+		resp["status"] = *body.Status
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) DeleteStrategyHandler(w http.ResponseWriter, r *http.Request) {

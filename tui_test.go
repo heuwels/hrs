@@ -37,19 +37,19 @@ func seedEntries(t *testing.T, m *tuiModel) {
 
 func seedGoals(t *testing.T, m *tuiModel) {
 	t.Helper()
-	InsertGoal(m.db, "2026-05-06", "Fix the bug", nil, true, true)
-	InsertGoal(m.db, "2026-05-06", "Write docs", nil, true, false)
-	InsertGoal(m.db, "2026-05-06", "Reply to email", nil, false, true)
-	InsertGoal(m.db, "2026-05-06", "Tidy bookmarks", nil, false, false)
+	InsertGoal(m.db, "2026-05-06", "Fix the bug", nil, true, true, nil)
+	InsertGoal(m.db, "2026-05-06", "Write docs", nil, true, false, nil)
+	InsertGoal(m.db, "2026-05-06", "Reply to email", nil, false, true, nil)
+	InsertGoal(m.db, "2026-05-06", "Tidy bookmarks", nil, false, false, nil)
 	m.loadGoals()
 	m.loadActiveGoals()
 }
 
 func seedStrategies(t *testing.T, m *tuiModel) {
 	t.Helper()
-	InsertStrategy(m.db, "Ship v2", "Major release", true, true)
-	InsertStrategy(m.db, "Improve docs", "Better onboarding", true, false)
-	InsertStrategy(m.db, "Quick wins", "", false, true)
+	InsertStrategy(m.db, "Ship v2", "Major release", true, true, nil)
+	InsertStrategy(m.db, "Improve docs", "Better onboarding", true, false, nil)
+	InsertStrategy(m.db, "Quick wins", "", false, true, nil)
 	m.loadStrategies()
 	m.loadActiveStrats()
 }
@@ -559,9 +559,9 @@ func TestTUIEnrichedEntriesShowContext(t *testing.T) {
 	seedEntries(t, m)
 
 	// Create a strategy and goal, link an entry to the goal
-	sid, _ := InsertStrategy(m.db, "Platform v2", "rewrite", false, false)
+	sid, _ := InsertStrategy(m.db, "Platform v2", "rewrite", false, false, nil)
 	sidp := &sid
-	InsertGoal(m.db, "2026-05-06", "Ship auth system", sidp, false, false)
+	InsertGoal(m.db, "2026-05-06", "Ship auth system", sidp, false, false, nil)
 	LinkGoalEntries(m.db, 1, []int64{1}) // link Entry A to goal 1
 	m.loadEntries()
 
@@ -622,8 +622,8 @@ func TestTUIMatrixDayNavigation(t *testing.T) {
 	m := testDB(t)
 	InsertEntry(m.db, &Entry{Date: "2026-05-05", Time: "09:00", Category: "dev", Title: "X", Bullets: []string{"x"}, HoursEst: 1})
 	InsertEntry(m.db, &Entry{Date: "2026-05-06", Time: "09:00", Category: "dev", Title: "Y", Bullets: []string{"y"}, HoursEst: 1})
-	InsertGoal(m.db, "2026-05-05", "Old goal", nil, true, false)
-	InsertGoal(m.db, "2026-05-06", "Today goal", nil, false, true)
+	InsertGoal(m.db, "2026-05-05", "Old goal", nil, true, false, nil)
+	InsertGoal(m.db, "2026-05-06", "Today goal", nil, false, true, nil)
 	m.loadDates()
 	m.loadEntries()
 	m.loadGoals()
@@ -801,7 +801,7 @@ func TestFullProgramGoalPriorityToggle(t *testing.T) {
 	}
 	defer db.Close()
 
-	InsertGoal(db, "2026-05-06", "Test goal", nil, false, false)
+	InsertGoal(db, "2026-05-06", "Test goal", nil, false, false, nil)
 	m := newTUIModel(db, "2026-05-06")
 
 	// tab to goals, toggle important, toggle urgent
@@ -833,8 +833,8 @@ func TestFullProgramMatrixViewSwitch(t *testing.T) {
 	}
 	defer db.Close()
 
-	InsertGoal(db, "2026-05-06", "Q1 goal", nil, true, true)
-	InsertGoal(db, "2026-05-06", "Q4 goal", nil, false, false)
+	InsertGoal(db, "2026-05-06", "Q1 goal", nil, true, true, nil)
+	InsertGoal(db, "2026-05-06", "Q4 goal", nil, false, false, nil)
 
 	m := newTUIModel(db, "2026-05-06")
 

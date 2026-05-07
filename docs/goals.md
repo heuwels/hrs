@@ -25,11 +25,15 @@ strategy: "ship v2 auth"
 
 ```bash
 hrs goals add "implement oauth2 pkce"
-hrs goals add "review deployment docs" -d 2026-04-18
-hrs goals add "write migration scripts" -s 1
+hrs goals add -d 2026-04-18 "review deployment docs"
+hrs goals add -s 1 "write migration scripts"
+hrs goals add -s 1 --ticket PROMO-123 "ship pat creation"
 ```
 
 `-d` sets the date (defaults to today). `-s` links the goal to a strategy.
+`--ticket` attaches an external ticket reference (see [ticket
+references](#ticket-references)). Place flags before the goal text — Go's
+flag parser stops at the first positional argument.
 
 ### list goals
 
@@ -72,6 +76,7 @@ rolls up progress across all linked goals.
 
 ```bash
 hrs strategy add -t "ship v2 auth" -desc "oauth2, token refresh, integration tests"
+hrs strategy add -t "ship pat creation" --ticket PROMO-150
 ```
 
 title can also be passed as a positional argument:
@@ -79,6 +84,9 @@ title can also be passed as a positional argument:
 ```bash
 hrs strategy add "ship v2 auth"
 ```
+
+`--ticket` attaches an external ticket reference (see [ticket
+references](#ticket-references)).
 
 ### list strategies
 
@@ -140,6 +148,51 @@ hrs strategy 1
 ```
 
 link goals to a strategy with `-s` on the CLI or `strategy_id` via HTTP.
+
+---
+
+## ticket references
+
+both goals and strategies can carry an optional `ticket_ref` — a free-form
+string that points at an external work item. anything works:
+
+- promotheus: `PROMO-123`
+- jira: `PROJ-456`
+- linear: `ENG-789`
+- github: `org/repo#42` or a full url
+
+```bash
+hrs strategy add -t "ship pat creation" --ticket PROMO-150
+hrs goals add -s 1 --ticket PROMO-151 "filament ui"
+hrs goals edit 5 --ticket ""    # clear
+```
+
+set the ticket on the strategy, the goal, or both — the filter ORs across
+them, so a goal under a `PROMO-150` strategy still matches `--ticket PROMO`
+even when the goal itself carries no ticket.
+
+### filtering entries by ticket
+
+`hrs ls` and `hrs export` accept `--ticket` to find every entry linked
+(through a goal) to a goal or strategy whose ticket matches the prefix:
+
+```bash
+# every entry tagged to a promotheus ticket — for an R&D claim
+hrs export --ticket PROMO --from 2026-01-01 --to 2026-12-31 --format csv
+
+# narrow to one ticket
+hrs ls --ticket PROMO-150 --from 2026-04-01
+
+# combine with category
+hrs export --ticket PROMO --category dev --format json
+```
+
+the match is a SQL `LIKE` prefix by default — `--ticket PROMO` becomes
+`PROMO%`. include `%` or `_` in your value to override.
+
+ticket filtering only sees entries that are linked to a goal. if you want
+work to count for a ticket-scoped report, complete the goal with `-e
+<entry_ids>` (or `hrs goals link`) so the link is recorded.
 
 ---
 

@@ -30,6 +30,7 @@ type Goal struct {
 	StrategyID *int64  `json:"strategy_id,omitempty"`
 	Important  bool    `json:"important"`
 	Urgent     bool    `json:"urgent"`
+	TicketRef  *string `json:"ticket_ref,omitempty"`
 }
 
 type Strategy struct {
@@ -41,14 +42,17 @@ type Strategy struct {
 	CompletedAt *string `json:"completed_at,omitempty"`
 	Important   bool    `json:"important"`
 	Urgent      bool    `json:"urgent"`
+	TicketRef   *string `json:"ticket_ref,omitempty"`
 }
 
 type EnrichedEntry struct {
 	Entry
-	GoalID        *int64  `json:"goal_id,omitempty"`
-	GoalText      *string `json:"goal_text,omitempty"`
-	StrategyID    *int64  `json:"strategy_id,omitempty"`
-	StrategyTitle *string `json:"strategy_title,omitempty"`
+	GoalID            *int64  `json:"goal_id,omitempty"`
+	GoalText          *string `json:"goal_text,omitempty"`
+	GoalTicketRef     *string `json:"goal_ticket_ref,omitempty"`
+	StrategyID        *int64  `json:"strategy_id,omitempty"`
+	StrategyTitle     *string `json:"strategy_title,omitempty"`
+	StrategyTicketRef *string `json:"strategy_ticket_ref,omitempty"`
 }
 
 type StrategyReport struct {
@@ -155,6 +159,9 @@ func OpenDB(path string) (*sql.DB, error) {
 	db.Exec(`ALTER TABLE goals ADD COLUMN urgent INTEGER NOT NULL DEFAULT 0`)
 	db.Exec(`ALTER TABLE strategies ADD COLUMN important INTEGER NOT NULL DEFAULT 0`)
 	db.Exec(`ALTER TABLE strategies ADD COLUMN urgent INTEGER NOT NULL DEFAULT 0`)
+	// Add ticket_ref to goals and strategies
+	db.Exec(`ALTER TABLE goals ADD COLUMN ticket_ref TEXT`)
+	db.Exec(`ALTER TABLE strategies ADD COLUMN ticket_ref TEXT`)
 	// Enable foreign keys
 	_, err = db.Exec(`PRAGMA foreign_keys = ON`)
 	return db, err
@@ -246,6 +253,42 @@ func GetEntriesRange(db *sql.DB, from, to, category string) ([]Entry, error) {
 	return out, rows.Err()
 }
 
+// GetEntriesByTicket returns entries linked to goals or strategies whose
+// ticket_ref matches the given LIKE pattern (e.g. "PROMO-%"). Date range and
+// optional category are applied as additional filters. Distinct: an entry
+// linked to multiple matching goals appears once.
+func GetEntriesByTicket(db *sql.DB, from, to, ticketLike, category string) ([]Entry, error) {
+	q := `SELECT DISTINCT e.id, e.date, e.time, e.category, e.title, e.bullets, e.hours_est
+	      FROM entries e
+	      JOIN goal_entries ge ON ge.entry_id = e.id
+	      JOIN goals g ON g.id = ge.goal_id
+	      LEFT JOIN strategies s ON s.id = g.strategy_id
+	      WHERE e.date >= ? AND e.date <= ?
+	        AND (g.ticket_ref LIKE ? OR s.ticket_ref LIKE ?)`
+	args := []any{from, to, ticketLike, ticketLike}
+	if category != "" {
+		q += ` AND e.category = ?`
+		args = append(args, category)
+	}
+	q += ` ORDER BY e.date, e.time, e.id`
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Entry
+	for rows.Next() {
+		var e Entry
+		var raw string
+		if err := rows.Scan(&e.ID, &e.Date, &e.Time, &e.Category, &e.Title, &raw, &e.HoursEst); err != nil {
+			return nil, err
+		}
+		json.Unmarshal([]byte(raw), &e.Bullets)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 func GetEntryByID(db *sql.DB, id int64) (*Entry, error) {
 	var e Entry
 	var raw string
@@ -287,7 +330,7 @@ func DeleteEntryByID(db *sql.DB, id int64) (string, error) {
 
 // --- Goals ---
 
-func InsertGoal(db *sql.DB, date, text string, strategyID *int64, important, urgent bool) (int64, error) {
+func InsertGoal(db *sql.DB, date, text string, strategyID *int64, important, urgent bool, ticketRef *string) (int64, error) {
 	if date == "" {
 		date = now().Format("2006-01-02")
 	}
@@ -297,8 +340,8 @@ func InsertGoal(db *sql.DB, date, text string, strategyID *int64, important, urg
 	if strings.TrimSpace(text) == "" {
 		return 0, fmt.Errorf("goal text must be non-empty")
 	}
-	res, err := db.Exec(`INSERT INTO goals (date, text, strategy_id, important, urgent) VALUES (?, ?, ?, ?, ?)`,
-		date, text, strategyID, important, urgent)
+	res, err := db.Exec(`INSERT INTO goals (date, text, strategy_id, important, urgent, ticket_ref) VALUES (?, ?, ?, ?, ?, ?)`,
+		date, text, strategyID, important, urgent, ticketRef)
 	if err != nil {
 		return 0, err
 	}
@@ -307,7 +350,7 @@ func InsertGoal(db *sql.DB, date, text string, strategyID *int64, important, urg
 
 func GetGoals(db *sql.DB, date string) ([]Goal, error) {
 	rows, err := db.Query(
-		`SELECT id, date, text, completed, strategy_id, important, urgent FROM goals WHERE date=? ORDER BY id`, date,
+		`SELECT id, date, text, completed, strategy_id, important, urgent, ticket_ref FROM goals WHERE date=? ORDER BY id`, date,
 	)
 	if err != nil {
 		return nil, err
@@ -316,7 +359,7 @@ func GetGoals(db *sql.DB, date string) ([]Goal, error) {
 	var out []Goal
 	for rows.Next() {
 		var g Goal
-		if err := rows.Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID, &g.Important, &g.Urgent); err != nil {
+		if err := rows.Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID, &g.Important, &g.Urgent, &g.TicketRef); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
@@ -373,8 +416,8 @@ func DeleteGoal(db *sql.DB, id int64) error {
 
 func GetGoalByID(db *sql.DB, id int64) (*Goal, error) {
 	var g Goal
-	err := db.QueryRow(`SELECT id, date, text, completed, strategy_id, important, urgent FROM goals WHERE id=?`, id).
-		Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID, &g.Important, &g.Urgent)
+	err := db.QueryRow(`SELECT id, date, text, completed, strategy_id, important, urgent, ticket_ref FROM goals WHERE id=?`, id).
+		Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID, &g.Important, &g.Urgent, &g.TicketRef)
 	if err != nil {
 		return nil, err
 	}
@@ -394,12 +437,12 @@ func LinkGoalEntries(db *sql.DB, goalID int64, entryIDs []int64) error {
 
 // --- Strategies ---
 
-func InsertStrategy(db *sql.DB, title, description string, important, urgent bool) (int64, error) {
+func InsertStrategy(db *sql.DB, title, description string, important, urgent bool, ticketRef *string) (int64, error) {
 	if strings.TrimSpace(title) == "" {
 		return 0, fmt.Errorf("strategy title must be non-empty")
 	}
-	res, err := db.Exec(`INSERT INTO strategies (title, description, important, urgent) VALUES (?, ?, ?, ?)`,
-		title, description, important, urgent)
+	res, err := db.Exec(`INSERT INTO strategies (title, description, important, urgent, ticket_ref) VALUES (?, ?, ?, ?, ?)`,
+		title, description, important, urgent, ticketRef)
 	if err != nil {
 		return 0, err
 	}
@@ -409,7 +452,7 @@ func InsertStrategy(db *sql.DB, title, description string, important, urgent boo
 // GetStrategiesForDate returns active strategies plus any completed/archived on the given date.
 func GetStrategiesForDate(db *sql.DB, date string) ([]Strategy, error) {
 	rows, err := db.Query(
-		`SELECT id, title, description, status, created_at, completed_at, important, urgent
+		`SELECT id, title, description, status, created_at, completed_at, important, urgent, ticket_ref
 		 FROM strategies
 		 WHERE status = 'active' OR DATE(completed_at) = ?
 		 ORDER BY id`, date,
@@ -421,7 +464,7 @@ func GetStrategiesForDate(db *sql.DB, date string) ([]Strategy, error) {
 	var out []Strategy
 	for rows.Next() {
 		var s Strategy
-		if err := rows.Scan(&s.ID, &s.Title, &s.Description, &s.Status, &s.CreatedAt, &s.CompletedAt, &s.Important, &s.Urgent); err != nil {
+		if err := rows.Scan(&s.ID, &s.Title, &s.Description, &s.Status, &s.CreatedAt, &s.CompletedAt, &s.Important, &s.Urgent, &s.TicketRef); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
@@ -430,7 +473,7 @@ func GetStrategiesForDate(db *sql.DB, date string) ([]Strategy, error) {
 }
 
 func GetStrategies(db *sql.DB, status string) ([]Strategy, error) {
-	q := `SELECT id, title, description, status, created_at, completed_at, important, urgent FROM strategies`
+	q := `SELECT id, title, description, status, created_at, completed_at, important, urgent, ticket_ref FROM strategies`
 	var args []any
 	if status != "" {
 		q += ` WHERE status=?`
@@ -445,7 +488,7 @@ func GetStrategies(db *sql.DB, status string) ([]Strategy, error) {
 	var out []Strategy
 	for rows.Next() {
 		var s Strategy
-		if err := rows.Scan(&s.ID, &s.Title, &s.Description, &s.Status, &s.CreatedAt, &s.CompletedAt, &s.Important, &s.Urgent); err != nil {
+		if err := rows.Scan(&s.ID, &s.Title, &s.Description, &s.Status, &s.CreatedAt, &s.CompletedAt, &s.Important, &s.Urgent, &s.TicketRef); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
@@ -456,8 +499,8 @@ func GetStrategies(db *sql.DB, status string) ([]Strategy, error) {
 func GetStrategyByID(db *sql.DB, id int64) (*Strategy, error) {
 	var s Strategy
 	err := db.QueryRow(
-		`SELECT id, title, description, status, created_at, completed_at, important, urgent FROM strategies WHERE id=?`, id,
-	).Scan(&s.ID, &s.Title, &s.Description, &s.Status, &s.CreatedAt, &s.CompletedAt, &s.Important, &s.Urgent)
+		`SELECT id, title, description, status, created_at, completed_at, important, urgent, ticket_ref FROM strategies WHERE id=?`, id,
+	).Scan(&s.ID, &s.Title, &s.Description, &s.Status, &s.CreatedAt, &s.CompletedAt, &s.Important, &s.Urgent, &s.TicketRef)
 	if err != nil {
 		return nil, err
 	}
@@ -474,9 +517,9 @@ func UpdateStrategyStatus(db *sql.DB, id int64, status string) error {
 	return err
 }
 
-func UpdateStrategy(db *sql.DB, id int64, title, description string, important, urgent bool) error {
-	_, err := db.Exec(`UPDATE strategies SET title=?, description=?, important=?, urgent=? WHERE id=?`,
-		title, description, important, urgent, id)
+func UpdateStrategy(db *sql.DB, id int64, title, description string, important, urgent bool, ticketRef *string) error {
+	_, err := db.Exec(`UPDATE strategies SET title=?, description=?, important=?, urgent=?, ticket_ref=? WHERE id=?`,
+		title, description, important, urgent, ticketRef, id)
 	return err
 }
 
@@ -512,7 +555,7 @@ func GetStrategyReport(db *sql.DB, id int64) (*StrategyReport, error) {
 
 func GetStrategyGoals(db *sql.DB, strategyID int64) ([]Goal, error) {
 	rows, err := db.Query(
-		`SELECT id, date, text, completed, strategy_id, important, urgent FROM goals WHERE strategy_id=? ORDER BY date DESC, id`, strategyID,
+		`SELECT id, date, text, completed, strategy_id, important, urgent, ticket_ref FROM goals WHERE strategy_id=? ORDER BY date DESC, id`, strategyID,
 	)
 	if err != nil {
 		return nil, err
@@ -521,7 +564,7 @@ func GetStrategyGoals(db *sql.DB, strategyID int64) ([]Goal, error) {
 	var out []Goal
 	for rows.Next() {
 		var g Goal
-		if err := rows.Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID, &g.Important, &g.Urgent); err != nil {
+		if err := rows.Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID, &g.Important, &g.Urgent, &g.TicketRef); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
@@ -535,15 +578,15 @@ func GetStrategyGoals(db *sql.DB, strategyID int64) ([]Goal, error) {
 	return out, nil
 }
 
-func UpdateGoal(db *sql.DB, id int64, text string, strategyID *int64, important, urgent bool) error {
-	_, err := db.Exec(`UPDATE goals SET text=?, strategy_id=?, important=?, urgent=? WHERE id=?`,
-		text, strategyID, important, urgent, id)
+func UpdateGoal(db *sql.DB, id int64, text string, strategyID *int64, important, urgent bool, ticketRef *string) error {
+	_, err := db.Exec(`UPDATE goals SET text=?, strategy_id=?, important=?, urgent=?, ticket_ref=? WHERE id=?`,
+		text, strategyID, important, urgent, ticketRef, id)
 	return err
 }
 
 func GetActiveGoals(db *sql.DB) ([]Goal, error) {
 	rows, err := db.Query(
-		`SELECT id, date, text, completed, strategy_id, important, urgent
+		`SELECT id, date, text, completed, strategy_id, important, urgent, ticket_ref
 		 FROM goals WHERE completed=0
 		 ORDER BY important DESC, urgent DESC, date DESC, id`,
 	)
@@ -554,7 +597,7 @@ func GetActiveGoals(db *sql.DB) ([]Goal, error) {
 	var out []Goal
 	for rows.Next() {
 		var g Goal
-		if err := rows.Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID, &g.Important, &g.Urgent); err != nil {
+		if err := rows.Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID, &g.Important, &g.Urgent, &g.TicketRef); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
@@ -571,7 +614,7 @@ func GetActiveGoals(db *sql.DB) ([]Goal, error) {
 func GetEnrichedEntries(db *sql.DB, date string) ([]EnrichedEntry, error) {
 	rows, err := db.Query(`
 		SELECT e.id, e.date, e.time, e.category, e.title, e.bullets, e.hours_est,
-		       g.id, g.text, s.id, s.title
+		       g.id, g.text, g.ticket_ref, s.id, s.title, s.ticket_ref
 		FROM entries e
 		LEFT JOIN (
 			SELECT ge.entry_id, MIN(ge.goal_id) as goal_id
@@ -592,9 +635,9 @@ func GetEnrichedEntries(db *sql.DB, date string) ([]EnrichedEntry, error) {
 		var ee EnrichedEntry
 		var raw string
 		var gID, sID sql.NullInt64
-		var gText, sTitle sql.NullString
+		var gText, sTitle, gTicket, sTicket sql.NullString
 		if err := rows.Scan(&ee.ID, &ee.Date, &ee.Time, &ee.Category, &ee.Title, &raw, &ee.HoursEst,
-			&gID, &gText, &sID, &sTitle); err != nil {
+			&gID, &gText, &gTicket, &sID, &sTitle, &sTicket); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(raw), &ee.Bullets)
@@ -602,9 +645,17 @@ func GetEnrichedEntries(db *sql.DB, date string) ([]EnrichedEntry, error) {
 			ee.GoalID = &gID.Int64
 			ee.GoalText = &gText.String
 		}
+		if gTicket.Valid {
+			t := gTicket.String
+			ee.GoalTicketRef = &t
+		}
 		if sID.Valid {
 			ee.StrategyID = &sID.Int64
 			ee.StrategyTitle = &sTitle.String
+		}
+		if sTicket.Valid {
+			t := sTicket.String
+			ee.StrategyTicketRef = &t
 		}
 		out = append(out, ee)
 	}

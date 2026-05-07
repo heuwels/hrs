@@ -28,6 +28,8 @@
       <span class="hero-nav__sep">&middot;</span>
       <a href="/docs/">Docs</a>
       <span class="hero-nav__sep">&middot;</span>
+      <a href="#use-cases">Use cases</a>
+      <span class="hero-nav__sep">&middot;</span>
       <a href="/docs/api.html">API</a>
       <span class="hero-nav__sep">&middot;</span>
       <a href="https://github.com/heuwels/hrs" class="github-link" target="_blank" rel="noopener noreferrer">
@@ -94,6 +96,36 @@
         <div class="feature-icon">&#x1F4E1;</div>
         <h3>Optional HTTP server</h3>
         <p>Run <code>hrs serve</code> for agents that can't shell out, browser extensions, or webhook integrations. The CLI auto-detects it.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="section-rule">
+
+<section class="pitch" id="use-cases">
+  <div class="container">
+    <h2>Use <span class="accent">cases</span></h2>
+    <div class="features-grid">
+      <div class="feature">
+        <div class="feature-icon">&#x1F916;</div>
+        <h3>Multi-agent worklog</h3>
+        <p>Run a dozen agents across a dozen repos and have each one append to a single, shared worklog. End the day with one markdown file instead of guessing what got done.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F4DD;</div>
+        <h3>R&amp;D claim timesheets</h3>
+        <p>Tag the goal or strategy for any experimental work with its tracker ticket (<code>--ticket PROMO-150</code>). At claim time, <code>hrs export --ticket PROMO --format csv</code> spits out every linked entry across the year — defensible hours for an R&amp;D submission with no manual tally.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F517;</div>
+        <h3>Cross-reference external trackers</h3>
+        <p>Goals and strategies accept any ticket format — GitHub Projects/Issues, Jira, Linear, or your own internal tracker. Filter by prefix to pull billable hours per project, time spent per epic, or all work tied to a specific issue.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F4CA;</div>
+        <h3>Hours per initiative</h3>
+        <p>Roll up entries through goals into strategies. <code>hrs strategy 1</code> shows total hours, completed goals, and the linked entries — useful for sprint reviews, internal reporting, or weekly check-ins with your team lead.</p>
       </div>
     </div>
   </div>

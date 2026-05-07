@@ -160,6 +160,7 @@ func cmdLs(args []string) error {
 	from := fs.String("from", "", "start date (YYYY-MM-DD)")
 	to := fs.String("to", "", "end date (YYYY-MM-DD)")
 	category := fs.String("category", "", "filter by category")
+	ticket := fs.String("ticket", "", "filter by goal/strategy ticket prefix (e.g. PROMO)")
 	fs.Parse(args)
 
 	date := now().Format("2006-01-02")
@@ -174,6 +175,45 @@ func cmdLs(args []string) error {
 	defer db.Close()
 
 	isTTY := isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
+
+	// Ticket filter implies a date range query (a single day rarely contains
+	// the work you want for an R&D claim).
+	if *ticket != "" {
+		if *from == "" {
+			*from = "2000-01-01"
+		}
+		if *to == "" {
+			*to = now().Format("2006-01-02")
+		}
+		entries, err := GetEntriesByTicket(db, *from, *to, ticketLike(*ticket), *category)
+		if err != nil {
+			return err
+		}
+		if *format == "json" {
+			if entries == nil {
+				entries = []Entry{}
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(entries)
+		}
+		if len(entries) == 0 {
+			fmt.Printf("No entries matching ticket %q from %s to %s\n", *ticket, *from, *to)
+			return nil
+		}
+		groups := groupByDate(entries)
+		for i, g := range groups {
+			if i > 0 {
+				fmt.Println()
+			}
+			if isTTY {
+				renderColorLs(g)
+			} else {
+				fmt.Print(RenderMarkdown(g))
+			}
+		}
+		return nil
+	}
 
 	// For single-date TTY display, use enriched entries to show goal/strategy context
 	if *from == "" && isTTY {
@@ -307,6 +347,9 @@ func renderColorLsEnriched(entries []EnrichedEntry) {
 			ctx := fmt.Sprintf("  -> %q", *e.GoalText)
 			if e.StrategyTitle != nil {
 				ctx += fmt.Sprintf(" | s: %s", *e.StrategyTitle)
+			}
+			if t := entryTicket(e); t != "" {
+				ctx += fmt.Sprintf(" [%s]", t)
 			}
 			fmt.Println(ctxSt.Render(ctx))
 		}
@@ -477,6 +520,7 @@ func cmdExport(args []string) error {
 	from := fs.String("from", "", "start date (YYYY-MM-DD)")
 	to := fs.String("to", "", "end date (YYYY-MM-DD)")
 	category := fs.String("category", "", "filter by category")
+	ticket := fs.String("ticket", "", "filter by goal/strategy ticket prefix (e.g. PROMO)")
 	format := fs.String("format", "json", "output format (json|csv)")
 	fs.Parse(args)
 
@@ -493,7 +537,12 @@ func cmdExport(args []string) error {
 	}
 	defer db.Close()
 
-	entries, err := GetEntriesRange(db, *from, *to, *category)
+	var entries []Entry
+	if *ticket != "" {
+		entries, err = GetEntriesByTicket(db, *from, *to, ticketLike(*ticket), *category)
+	} else {
+		entries, err = GetEntriesRange(db, *from, *to, *category)
+	}
 	if err != nil {
 		return err
 	}
@@ -665,6 +714,7 @@ func cmdGoalsAdd(args []string) error {
 	strategyFlag := fs.Int64("s", 0, "link to strategy ID")
 	importantFlag := fs.Bool("i", false, "mark as important")
 	urgentFlag := fs.Bool("u", false, "mark as urgent")
+	ticketFlag := fs.String("ticket", "", "ticket reference (e.g. PROMO-123, ENG-456, GH-org/repo#12)")
 	fs.Parse(args)
 
 	text := strings.Join(fs.Args(), " ")
@@ -686,13 +736,21 @@ func cmdGoalsAdd(args []string) error {
 		sid = strategyFlag
 	}
 
-	id, err := InsertGoal(db, *date, text, sid, *importantFlag, *urgentFlag)
+	var ticket *string
+	if *ticketFlag != "" {
+		ticket = ticketFlag
+	}
+
+	id, err := InsertGoal(db, *date, text, sid, *importantFlag, *urgentFlag, ticket)
 	if err != nil {
 		return err
 	}
 	resp := map[string]any{"id": id, "date": *date, "text": text}
 	if sid != nil {
 		resp["strategy_id"] = *sid
+	}
+	if ticket != nil {
+		resp["ticket_ref"] = *ticket
 	}
 	out, _ := json.Marshal(resp)
 	fmt.Println(string(out))
@@ -848,6 +906,7 @@ func cmdGoalsEdit(args []string) error {
 	strategyFlag := fs.Int64("s", -1, "link to strategy ID (0 to unlink)")
 	importantFlag := fs.String("i", "", "important (true|false)")
 	urgentFlag := fs.String("u", "", "urgent (true|false)")
+	ticketFlag := fs.String("ticket", "", "ticket reference (empty string clears)")
 	fs.Parse(args[1:])
 
 	db, err := OpenDB(*dbPath)
@@ -875,13 +934,44 @@ func cmdGoalsEdit(args []string) error {
 	if *urgentFlag != "" {
 		g.Urgent = *urgentFlag == "true" || *urgentFlag == "1"
 	}
+	if ticketWasSet(fs, "ticket") {
+		if *ticketFlag == "" {
+			g.TicketRef = nil
+		} else {
+			v := *ticketFlag
+			g.TicketRef = &v
+		}
+	}
 
-	if err := UpdateGoal(db, id, g.Text, g.StrategyID, g.Important, g.Urgent); err != nil {
+	if err := UpdateGoal(db, id, g.Text, g.StrategyID, g.Important, g.Urgent, g.TicketRef); err != nil {
 		return err
 	}
 	out, _ := json.Marshal(g)
 	fmt.Println(string(out))
 	return nil
+}
+
+// ticketLike normalises a user-supplied ticket filter into a SQL LIKE pattern.
+// "PROMO"     -> "PROMO%"     (prefix match — common case)
+// "%PROMO%"   -> "%PROMO%"    (explicit wildcards pass through)
+// "PROMO-123" -> "PROMO-123%" (still a prefix; tickets with longer suffixes match)
+func ticketLike(s string) string {
+	if strings.ContainsAny(s, "%_") {
+		return s
+	}
+	return s + "%"
+}
+
+// ticketWasSet reports whether the named flag was explicitly passed on the
+// command line. Used to distinguish "not provided" from "provided as empty".
+func ticketWasSet(fs *flag.FlagSet, name string) bool {
+	set := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			set = true
+		}
+	})
+	return set
 }
 
 func cmdStrategy(args []string) error {
@@ -1006,6 +1096,7 @@ func cmdStrategyAdd(args []string) error {
 	desc := fs.String("desc", "", "description")
 	importantFlag := fs.Bool("i", false, "mark as important")
 	urgentFlag := fs.Bool("u", false, "mark as urgent")
+	ticketFlag := fs.String("ticket", "", "ticket reference (e.g. PROMO-123, ENG-456, GH-org/repo#12)")
 	fs.Parse(args)
 
 	// Allow title as positional arg or -t flag
@@ -1022,11 +1113,20 @@ func cmdStrategyAdd(args []string) error {
 	}
 	defer db.Close()
 
-	id, err := InsertStrategy(db, *title, *desc, *importantFlag, *urgentFlag)
+	var ticket *string
+	if *ticketFlag != "" {
+		ticket = ticketFlag
+	}
+
+	id, err := InsertStrategy(db, *title, *desc, *importantFlag, *urgentFlag, ticket)
 	if err != nil {
 		return err
 	}
-	out, _ := json.Marshal(map[string]any{"id": id, "title": *title})
+	resp := map[string]any{"id": id, "title": *title}
+	if ticket != nil {
+		resp["ticket_ref"] = *ticket
+	}
+	out, _ := json.Marshal(resp)
 	fmt.Println(string(out))
 	return nil
 }
@@ -1073,6 +1173,7 @@ func cmdStrategyEdit(args []string) error {
 	desc := fs.String("desc", "", "description")
 	importantFlag := fs.String("i", "", "important (true|false)")
 	urgentFlag := fs.String("u", "", "urgent (true|false)")
+	ticketFlag := fs.String("ticket", "", "ticket reference (empty string clears)")
 	fs.Parse(args[1:])
 
 	db, err := OpenDB(*dbPath)
@@ -1097,7 +1198,15 @@ func cmdStrategyEdit(args []string) error {
 	if *urgentFlag != "" {
 		s.Urgent = *urgentFlag == "true" || *urgentFlag == "1"
 	}
-	if err := UpdateStrategy(db, id, s.Title, s.Description, s.Important, s.Urgent); err != nil {
+	if ticketWasSet(fs, "ticket") {
+		if *ticketFlag == "" {
+			s.TicketRef = nil
+		} else {
+			v := *ticketFlag
+			s.TicketRef = &v
+		}
+	}
+	if err := UpdateStrategy(db, id, s.Title, s.Description, s.Important, s.Urgent, s.TicketRef); err != nil {
 		return err
 	}
 	out, _ := json.Marshal(s)

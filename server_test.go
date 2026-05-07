@@ -675,6 +675,140 @@ func TestActiveGoals(t *testing.T) {
 	}
 }
 
+func TestTicketFilter(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	post := func(path, body string) {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("POST", path, strings.NewReader(body)))
+	}
+	put := func(path, body string) {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("PUT", path, strings.NewReader(body)))
+	}
+
+	// Two goals: one with PROMO ticket, one without.
+	post("/goals", `{"date":"2026-04-14","text":"Promo work","ticket_ref":"PROMO-42"}`)
+	post("/goals", `{"date":"2026-04-14","text":"Other work"}`)
+	// Three entries: A linked to goal #1, B linked to goal #2, C unlinked.
+	post("/entries", `{"date":"2026-04-14","time":"09:00","category":"dev","title":"PromoEntry","bullets":["a"],"hours_est":2}`)
+	post("/entries", `{"date":"2026-04-14","time":"10:00","category":"dev","title":"OtherEntry","bullets":["b"],"hours_est":1}`)
+	post("/entries", `{"date":"2026-04-14","time":"11:00","category":"dev","title":"UnlinkedEntry","bullets":["c"],"hours_est":1}`)
+	put("/goals/1/done", `{"entry_ids":[1]}`)
+	put("/goals/2/done", `{"entry_ids":[2]}`)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/entries?ticket=PROMO", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("ticket filter: %d %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "PromoEntry") {
+		t.Fatalf("missing PromoEntry: %s", body)
+	}
+	if strings.Contains(body, "OtherEntry") || strings.Contains(body, "UnlinkedEntry") {
+		t.Fatalf("ticket filter leaked unrelated entries: %s", body)
+	}
+
+	// Update goal #2 to also use a PROMO ticket via PUT — should now match.
+	put("/goals/2", `{"ticket_ref":"PROMO-99"}`)
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/entries?ticket=PROMO", nil))
+	body = w.Body.String()
+	if !strings.Contains(body, "OtherEntry") {
+		t.Fatalf("expected OtherEntry after ticket update: %s", body)
+	}
+
+	// Clear goal #2's ticket via empty string — should drop out again.
+	put("/goals/2", `{"ticket_ref":""}`)
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/entries?ticket=PROMO", nil))
+	body = w.Body.String()
+	if strings.Contains(body, "OtherEntry") {
+		t.Fatalf("ticket clear didn't take effect: %s", body)
+	}
+}
+
+func TestStrategyEditViaPUT(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/strategies", strings.NewReader(`{"title":"Original"}`)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+
+	// Edit ticket_ref + title in one PUT (no status change).
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("PUT", "/strategies/1", strings.NewReader(`{"ticket_ref":"PROMO-200","title":"Renamed"}`)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("edit: %d %s", w.Code, w.Body.String())
+	}
+
+	st, err := GetStrategyByID(s.db, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Title != "Renamed" {
+		t.Errorf("title not updated: %q", st.Title)
+	}
+	if st.TicketRef == nil || *st.TicketRef != "PROMO-200" {
+		t.Errorf("ticket not updated: %v", st.TicketRef)
+	}
+
+	// Status-only PUT still works.
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("PUT", "/strategies/1", strings.NewReader(`{"status":"completed"}`)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status edit: %d %s", w.Code, w.Body.String())
+	}
+	st, _ = GetStrategyByID(s.db, 1)
+	if st.Status != "completed" {
+		t.Errorf("status not updated: %q", st.Status)
+	}
+	// Title and ticket should still be there.
+	if st.Title != "Renamed" {
+		t.Errorf("title clobbered: %q", st.Title)
+	}
+
+	// Clear ticket via empty string.
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("PUT", "/strategies/1", strings.NewReader(`{"ticket_ref":""}`)))
+	st, _ = GetStrategyByID(s.db, 1)
+	if st.TicketRef != nil {
+		t.Errorf("ticket should be cleared: %v", *st.TicketRef)
+	}
+}
+
+func TestStrategyTicketInheritance(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	post := func(path, body string) string {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("POST", path, strings.NewReader(body)))
+		return w.Body.String()
+	}
+	put := func(path, body string) {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("PUT", path, strings.NewReader(body)))
+	}
+
+	// Strategy carries the ticket; goal does not.
+	post("/strategies", `{"title":"R&D","ticket_ref":"PROMO-7"}`)
+	post("/goals", `{"date":"2026-04-14","text":"work","strategy_id":1}`)
+	post("/entries", `{"date":"2026-04-14","time":"09:00","category":"dev","title":"InheritedPromo","bullets":["a"],"hours_est":2}`)
+	put("/goals/1/done", `{"entry_ids":[1]}`)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/entries?ticket=PROMO", nil))
+	if !strings.Contains(w.Body.String(), "InheritedPromo") {
+		t.Fatalf("strategy ticket should match: %s", w.Body.String())
+	}
+}
+
 func TestEmptyList(t *testing.T) {
 	s := testServer(t)
 	mux := testMux(s)

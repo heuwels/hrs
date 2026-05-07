@@ -39,9 +39,10 @@
 
     <h3>Set goals for today</h3>
     <pre><code>hrs goals add "implement oauth2 pkce"
-hrs goals add "review deployment docs" -d 2026-04-18
-hrs goals add "write migration scripts" -s 1</code></pre>
-    <p><code>-d</code> sets the date (defaults to today). <code>-s</code> links the goal to a strategy.</p>
+hrs goals add -d 2026-04-18 "review deployment docs"
+hrs goals add -s 1 "write migration scripts"
+hrs goals add -s 1 --ticket PROMO-123 "ship pat creation"</code></pre>
+    <p><code>-d</code> sets the date (defaults to today). <code>-s</code> links the goal to a strategy. <code>--ticket</code> attaches an external ticket reference (see <a href="#ticket-references">ticket references</a>). Place flags before the goal text &mdash; Go's flag parser stops at the first positional argument.</p>
 
     <h3>List goals</h3>
     <pre><code>hrs goals                    # today's goals
@@ -64,9 +65,11 @@ hrs goals rm 1               # delete a goal</code></pre>
     <p>Strategies span multiple days. Daily goals link up to them, and hrs rolls up progress across all linked goals.</p>
 
     <h3>Create a strategy</h3>
-    <pre><code>hrs strategy add -t "ship v2 auth" -desc "oauth2, token refresh, integration tests"</code></pre>
+    <pre><code>hrs strategy add -t "ship v2 auth" -desc "oauth2, token refresh, integration tests"
+hrs strategy add -t "ship pat creation" --ticket PROMO-150</code></pre>
     <p>Title can also be passed as a positional argument:</p>
     <pre><code>hrs strategy add "ship v2 auth"</code></pre>
+    <p><code>--ticket</code> attaches an external ticket reference (see <a href="#ticket-references">ticket references</a>).</p>
 
     <h3>List strategies</h3>
     <pre><code>hrs strategy                         # all strategies
@@ -113,6 +116,37 @@ hrs goals done 1 -e 50
 hrs strategy 1</code></pre>
 
     <p>Link goals to a strategy with <code>-s</code> on the CLI or <code>strategy_id</code> via HTTP.</p>
+
+    <h2 id="ticket-references">Ticket references</h2>
+    <p>Both goals and strategies can carry an optional <code>ticket_ref</code> &mdash; a free-form string pointing at an external work item. Anything works:</p>
+    <ul>
+      <li>Promotheus: <code>PROMO-123</code></li>
+      <li>Jira: <code>PROJ-456</code></li>
+      <li>Linear: <code>ENG-789</code></li>
+      <li>GitHub: <code>org/repo#42</code> or a full URL</li>
+    </ul>
+
+    <pre><code>hrs strategy add -t "ship pat creation" --ticket PROMO-150
+hrs goals add -s 1 --ticket PROMO-151 "filament ui"
+hrs goals edit 5 --ticket ""    # clear</code></pre>
+
+    <p>Set the ticket on the strategy, the goal, or both &mdash; the filter ORs across them, so a goal under a <code>PROMO-150</code> strategy still matches <code>--ticket PROMO</code> even when the goal itself carries no ticket.</p>
+
+    <h3>Filtering entries by ticket</h3>
+    <p><code>hrs ls</code> and <code>hrs export</code> accept <code>--ticket</code> to find every entry linked (through a goal) to a goal or strategy whose ticket matches the prefix:</p>
+
+    <pre><code># every entry tagged to a Promotheus ticket — for an R&amp;D claim
+hrs export --ticket PROMO --from 2026-01-01 --to 2026-12-31 --format csv
+
+# narrow to one ticket
+hrs ls --ticket PROMO-150 --from 2026-04-01
+
+# combine with category
+hrs export --ticket PROMO --category dev --format json</code></pre>
+
+    <p>The match is a SQL <code>LIKE</code> prefix by default &mdash; <code>--ticket PROMO</code> becomes <code>PROMO%</code>. Include <code>%</code> or <code>_</code> in your value to override.</p>
+
+    <p>Ticket filtering only sees entries that are linked to a goal. If you want work to count for a ticket-scoped report, complete the goal with <code>-e &lt;entry_ids&gt;</code> (or <code>hrs goals link</code>) so the link is recorded.</p>
 
     <h2>TUI support</h2>
     <p>The TUI has a dedicated goals view. Press <code>tab</code> to switch between entries and goals. See <a href="/docs/tui.html">TUI explorer</a> for all keybindings.</p>
