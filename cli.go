@@ -715,9 +715,9 @@ func cmdGoalsAdd(args []string) error {
 	importantFlag := fs.Bool("i", false, "mark as important")
 	urgentFlag := fs.Bool("u", false, "mark as urgent")
 	ticketFlag := fs.String("ticket", "", "ticket reference (e.g. PROMO-123, ENG-456, GH-org/repo#12)")
-	fs.Parse(args)
+	positional := parseFlagsAnywhere(fs, args)
 
-	text := strings.Join(fs.Args(), " ")
+	text := strings.Join(positional, " ")
 	if text == "" {
 		return fmt.Errorf("usage: hrs goals add \"goal text\"")
 	}
@@ -974,6 +974,26 @@ func ticketWasSet(fs *flag.FlagSet, name string) bool {
 	return set
 }
 
+// parseFlagsAnywhere parses flags from any position in args and returns the
+// remaining positional arguments. The stdlib flag package stops at the first
+// non-flag, so `goals add "text" -s 9` would leave `-s 9` unparsed; this helper
+// re-enters Parse after each positional so flags can appear after text.
+func parseFlagsAnywhere(fs *flag.FlagSet, args []string) []string {
+	var positional []string
+	for len(args) > 0 {
+		if err := fs.Parse(args); err != nil {
+			return positional
+		}
+		args = fs.Args()
+		if len(args) == 0 {
+			break
+		}
+		positional = append(positional, args[0])
+		args = args[1:]
+	}
+	return positional
+}
+
 func cmdStrategy(args []string) error {
 	action := ""
 	if len(args) > 0 {
@@ -1097,11 +1117,11 @@ func cmdStrategyAdd(args []string) error {
 	importantFlag := fs.Bool("i", false, "mark as important")
 	urgentFlag := fs.Bool("u", false, "mark as urgent")
 	ticketFlag := fs.String("ticket", "", "ticket reference (e.g. PROMO-123, ENG-456, GH-org/repo#12)")
-	fs.Parse(args)
+	positional := parseFlagsAnywhere(fs, args)
 
 	// Allow title as positional arg or -t flag
 	if *title == "" {
-		*title = strings.Join(fs.Args(), " ")
+		*title = strings.Join(positional, " ")
 	}
 	if *title == "" {
 		return fmt.Errorf("usage: hrs strategy add -t \"title\" [-desc \"description\"]")
