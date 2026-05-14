@@ -261,6 +261,58 @@ func TestRenderMarkdown(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, md)
 		}
 	}
+	if strings.Contains(md, "R&D") {
+		t.Errorf("no entries tagged R&D, but R&D summary appeared:\n%s", md)
+	}
+}
+
+func TestRenderMarkdownRD(t *testing.T) {
+	md := RenderMarkdown([]Entry{
+		{Date: "2026-04-13", Time: "10:00", Category: "dev", Title: "Novel algorithm", Bullets: []string{"experimented"}, HoursEst: 3, RD: true},
+		{Date: "2026-04-13", Time: "14:00", Category: "admin", Title: "Routine", Bullets: []string{"chored"}, HoursEst: 1},
+	})
+	for _, want := range []string{
+		"## 10:00 - [dev] Novel algorithm (~3h) [R&D]",
+		"## 14:00 - [admin] Routine (~1h)\n",
+		"- R&D hours: 3h (75%)",
+	} {
+		if !strings.Contains(md, want) {
+			t.Errorf("missing %q in:\n%s", want, md)
+		}
+	}
+}
+
+func TestRDPersistsThroughCreateAndList(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	body := `{"date":"2026-04-13","time":"10:00","category":"dev","title":"R&D work","bullets":["x"],"hours_est":1,"rd":true}`
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/entries", strings.NewReader(body)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/entries?date=2026-04-13", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("list: %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `"rd":true`) {
+		t.Fatalf("rd flag lost in round trip: %s", w.Body.String())
+	}
+}
+
+func TestFilterRD(t *testing.T) {
+	entries := []Entry{
+		{ID: 1, RD: true},
+		{ID: 2, RD: false},
+		{ID: 3, RD: true},
+	}
+	got := filterRD(entries)
+	if len(got) != 2 || got[0].ID != 1 || got[1].ID != 3 {
+		t.Errorf("filterRD: expected entries 1 and 3, got %+v", got)
+	}
 }
 
 func TestSyncWritesFile(t *testing.T) {

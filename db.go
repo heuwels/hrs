@@ -19,6 +19,7 @@ type Entry struct {
 	Title    string   `json:"title"`
 	Bullets  []string `json:"bullets"`
 	HoursEst float64  `json:"hours_est"`
+	RD       bool     `json:"rd,omitempty"`
 }
 
 type Goal struct {
@@ -162,6 +163,8 @@ func OpenDB(path string) (*sql.DB, error) {
 	// Add ticket_ref to goals and strategies
 	db.Exec(`ALTER TABLE goals ADD COLUMN ticket_ref TEXT`)
 	db.Exec(`ALTER TABLE strategies ADD COLUMN ticket_ref TEXT`)
+	// Tag entries that qualify as R&D for tax/grant reporting
+	db.Exec(`ALTER TABLE entries ADD COLUMN rd INTEGER NOT NULL DEFAULT 0`)
 	// Enable foreign keys
 	_, err = db.Exec(`PRAGMA foreign_keys = ON`)
 	return db, err
@@ -179,8 +182,8 @@ func InsertEntry(db *sql.DB, e *Entry) (int64, error) {
 	}
 	b, _ := json.Marshal(e.Bullets)
 	res, err := db.Exec(
-		`INSERT INTO entries (date, time, category, title, bullets, hours_est) VALUES (?,?,?,?,?,?)`,
-		e.Date, e.Time, e.Category, e.Title, string(b), e.HoursEst,
+		`INSERT INTO entries (date, time, category, title, bullets, hours_est, rd) VALUES (?,?,?,?,?,?,?)`,
+		e.Date, e.Time, e.Category, e.Title, string(b), e.HoursEst, e.RD,
 	)
 	if err != nil {
 		return 0, err
@@ -194,15 +197,15 @@ func UpdateEntry(db *sql.DB, id int64, e *Entry) error {
 	}
 	b, _ := json.Marshal(e.Bullets)
 	_, err := db.Exec(
-		`UPDATE entries SET date=?, time=?, category=?, title=?, bullets=?, hours_est=? WHERE id=?`,
-		e.Date, e.Time, e.Category, e.Title, string(b), e.HoursEst, id,
+		`UPDATE entries SET date=?, time=?, category=?, title=?, bullets=?, hours_est=?, rd=? WHERE id=?`,
+		e.Date, e.Time, e.Category, e.Title, string(b), e.HoursEst, e.RD, id,
 	)
 	return err
 }
 
 func GetEntries(db *sql.DB, date string) ([]Entry, error) {
 	rows, err := db.Query(
-		`SELECT id, date, time, category, title, bullets, hours_est FROM entries WHERE date=? ORDER BY time, id`,
+		`SELECT id, date, time, category, title, bullets, hours_est, rd FROM entries WHERE date=? ORDER BY time, id`,
 		date,
 	)
 	if err != nil {
@@ -213,7 +216,7 @@ func GetEntries(db *sql.DB, date string) ([]Entry, error) {
 	for rows.Next() {
 		var e Entry
 		var raw string
-		if err := rows.Scan(&e.ID, &e.Date, &e.Time, &e.Category, &e.Title, &raw, &e.HoursEst); err != nil {
+		if err := rows.Scan(&e.ID, &e.Date, &e.Time, &e.Category, &e.Title, &raw, &e.HoursEst, &e.RD); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(raw), &e.Bullets)
@@ -227,12 +230,12 @@ func GetEntriesRange(db *sql.DB, from, to, category string) ([]Entry, error) {
 	var err error
 	if category != "" {
 		rows, err = db.Query(
-			`SELECT id, date, time, category, title, bullets, hours_est FROM entries WHERE date>=? AND date<=? AND category=? ORDER BY date, time, id`,
+			`SELECT id, date, time, category, title, bullets, hours_est, rd FROM entries WHERE date>=? AND date<=? AND category=? ORDER BY date, time, id`,
 			from, to, category,
 		)
 	} else {
 		rows, err = db.Query(
-			`SELECT id, date, time, category, title, bullets, hours_est FROM entries WHERE date>=? AND date<=? ORDER BY date, time, id`,
+			`SELECT id, date, time, category, title, bullets, hours_est, rd FROM entries WHERE date>=? AND date<=? ORDER BY date, time, id`,
 			from, to,
 		)
 	}
@@ -244,7 +247,7 @@ func GetEntriesRange(db *sql.DB, from, to, category string) ([]Entry, error) {
 	for rows.Next() {
 		var e Entry
 		var raw string
-		if err := rows.Scan(&e.ID, &e.Date, &e.Time, &e.Category, &e.Title, &raw, &e.HoursEst); err != nil {
+		if err := rows.Scan(&e.ID, &e.Date, &e.Time, &e.Category, &e.Title, &raw, &e.HoursEst, &e.RD); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(raw), &e.Bullets)
@@ -258,7 +261,7 @@ func GetEntriesRange(db *sql.DB, from, to, category string) ([]Entry, error) {
 // optional category are applied as additional filters. Distinct: an entry
 // linked to multiple matching goals appears once.
 func GetEntriesByTicket(db *sql.DB, from, to, ticketLike, category string) ([]Entry, error) {
-	q := `SELECT DISTINCT e.id, e.date, e.time, e.category, e.title, e.bullets, e.hours_est
+	q := `SELECT DISTINCT e.id, e.date, e.time, e.category, e.title, e.bullets, e.hours_est, e.rd
 	      FROM entries e
 	      JOIN goal_entries ge ON ge.entry_id = e.id
 	      JOIN goals g ON g.id = ge.goal_id
@@ -280,7 +283,7 @@ func GetEntriesByTicket(db *sql.DB, from, to, ticketLike, category string) ([]En
 	for rows.Next() {
 		var e Entry
 		var raw string
-		if err := rows.Scan(&e.ID, &e.Date, &e.Time, &e.Category, &e.Title, &raw, &e.HoursEst); err != nil {
+		if err := rows.Scan(&e.ID, &e.Date, &e.Time, &e.Category, &e.Title, &raw, &e.HoursEst, &e.RD); err != nil {
 			return nil, err
 		}
 		json.Unmarshal([]byte(raw), &e.Bullets)
@@ -293,8 +296,8 @@ func GetEntryByID(db *sql.DB, id int64) (*Entry, error) {
 	var e Entry
 	var raw string
 	err := db.QueryRow(
-		`SELECT id, date, time, category, title, bullets, hours_est FROM entries WHERE id=?`, id,
-	).Scan(&e.ID, &e.Date, &e.Time, &e.Category, &e.Title, &raw, &e.HoursEst)
+		`SELECT id, date, time, category, title, bullets, hours_est, rd FROM entries WHERE id=?`, id,
+	).Scan(&e.ID, &e.Date, &e.Time, &e.Category, &e.Title, &raw, &e.HoursEst, &e.RD)
 	if err != nil {
 		return nil, err
 	}
@@ -613,7 +616,7 @@ func GetActiveGoals(db *sql.DB) ([]Goal, error) {
 
 func GetEnrichedEntries(db *sql.DB, date string) ([]EnrichedEntry, error) {
 	rows, err := db.Query(`
-		SELECT e.id, e.date, e.time, e.category, e.title, e.bullets, e.hours_est,
+		SELECT e.id, e.date, e.time, e.category, e.title, e.bullets, e.hours_est, e.rd,
 		       g.id, g.text, g.ticket_ref, s.id, s.title, s.ticket_ref
 		FROM entries e
 		LEFT JOIN (
@@ -636,7 +639,7 @@ func GetEnrichedEntries(db *sql.DB, date string) ([]EnrichedEntry, error) {
 		var raw string
 		var gID, sID sql.NullInt64
 		var gText, sTitle, gTicket, sTicket sql.NullString
-		if err := rows.Scan(&ee.ID, &ee.Date, &ee.Time, &ee.Category, &ee.Title, &raw, &ee.HoursEst,
+		if err := rows.Scan(&ee.ID, &ee.Date, &ee.Time, &ee.Category, &ee.Title, &raw, &ee.HoursEst, &ee.RD,
 			&gID, &gText, &gTicket, &sID, &sTitle, &sTicket); err != nil {
 			return nil, err
 		}
@@ -668,12 +671,18 @@ func RenderMarkdown(entries []Entry) string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Worklog — %s\n\n", entries[0].Date)
-	var total float64
+	var total, totalRD float64
 	for _, e := range entries {
 		total += e.HoursEst
+		if e.RD {
+			totalRD += e.HoursEst
+		}
 		fmt.Fprintf(&b, "## %s - [%s] %s", e.Time, e.Category, e.Title)
 		if e.HoursEst > 0 {
 			fmt.Fprintf(&b, " (~%gh)", e.HoursEst)
+		}
+		if e.RD {
+			b.WriteString(" [R&D]")
 		}
 		b.WriteByte('\n')
 		for _, bullet := range e.Bullets {
@@ -685,5 +694,8 @@ func RenderMarkdown(entries []Entry) string {
 	fmt.Fprintf(&b, "- Entries: %d\n", len(entries))
 	fmt.Fprintf(&b, "- Est. person-hours (without AI): %gh\n", total)
 	fmt.Fprintf(&b, "- Est. person-days: %.1fd (assuming 8h/day)\n", total/8)
+	if totalRD > 0 {
+		fmt.Fprintf(&b, "- R&D hours: %gh (%.0f%%)\n", totalRD, 100*totalRD/total)
+	}
 	return b.String()
 }
