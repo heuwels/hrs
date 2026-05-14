@@ -587,6 +587,34 @@ func UpdateGoal(db *sql.DB, id int64, text string, strategyID *int64, important,
 	return err
 }
 
+// GetAllGoals returns every goal in the database, completed and active, with
+// EntryIDs populated. Used by `hrs backup` to produce a full-state snapshot.
+func GetAllGoals(db *sql.DB) ([]Goal, error) {
+	rows, err := db.Query(
+		`SELECT id, date, text, completed, strategy_id, important, urgent, ticket_ref
+		 FROM goals ORDER BY date, id`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Goal
+	for rows.Next() {
+		var g Goal
+		if err := rows.Scan(&g.ID, &g.Date, &g.Text, &g.Completed, &g.StrategyID, &g.Important, &g.Urgent, &g.TicketRef); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].EntryIDs, _ = getGoalEntryIDs(db, out[i].ID)
+	}
+	return out, nil
+}
+
 func GetActiveGoals(db *sql.DB) ([]Goal, error) {
 	rows, err := db.Query(
 		`SELECT id, date, text, completed, strategy_id, important, urgent, ticket_ref

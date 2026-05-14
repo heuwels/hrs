@@ -635,6 +635,95 @@ func cmdExport(args []string) error {
 	return nil
 }
 
+// Backup is the full-state snapshot written by `hrs backup`. Restoring is not
+// (yet) automated, but the JSON is structured to make it straightforward.
+type Backup struct {
+	Version    int        `json:"version"`
+	BackupTime string     `json:"backup_time"`
+	Entries    []Entry    `json:"entries"`
+	Goals      []Goal     `json:"goals"`
+	Strategies []Strategy `json:"strategies"`
+}
+
+func cmdBackup(args []string) error {
+	fs := flag.NewFlagSet("hrs backup", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	output := fs.String("o", "", "output path (default: stdout)")
+	fs.Parse(args)
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	entries, err := GetEntriesRange(db, "2000-01-01", "2099-12-31", "")
+	if err != nil {
+		return fmt.Errorf("read entries: %w", err)
+	}
+	if entries == nil {
+		entries = []Entry{}
+	}
+	goals, err := GetAllGoals(db)
+	if err != nil {
+		return fmt.Errorf("read goals: %w", err)
+	}
+	if goals == nil {
+		goals = []Goal{}
+	}
+	strategies, err := GetStrategies(db, "")
+	if err != nil {
+		return fmt.Errorf("read strategies: %w", err)
+	}
+	if strategies == nil {
+		strategies = []Strategy{}
+	}
+
+	backup := Backup{
+		Version:    1,
+		BackupTime: now().Format(time.RFC3339),
+		Entries:    entries,
+		Goals:      goals,
+		Strategies: strategies,
+	}
+
+	w := os.Stdout
+	if *output != "" {
+		if err := os.MkdirAll(filepath.Dir(*output), 0755); err != nil {
+			return fmt.Errorf("mkdir: %w", err)
+		}
+		// Write to a temp sibling and rename atomically so a reader (or git
+		// pre-commit hook running concurrently) never sees a partial file.
+		tmp, err := os.CreateTemp(filepath.Dir(*output), ".hrs-backup-*.json")
+		if err != nil {
+			return fmt.Errorf("temp: %w", err)
+		}
+		w = tmp
+		defer func() {
+			tmp.Close()
+			os.Remove(tmp.Name())
+		}()
+	}
+
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(backup); err != nil {
+		return err
+	}
+
+	if *output != "" {
+		if err := w.Close(); err != nil {
+			return err
+		}
+		if err := os.Rename(w.Name(), *output); err != nil {
+			return fmt.Errorf("rename to %s: %w", *output, err)
+		}
+		fmt.Fprintf(os.Stderr, "wrote %s (%d entries, %d goals, %d strategies)\n",
+			*output, len(entries), len(goals), len(strategies))
+	}
+	return nil
+}
+
 func cmdGoals(args []string) error {
 	action := ""
 	if len(args) > 0 {
