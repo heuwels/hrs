@@ -718,8 +718,9 @@ func cmdBackup(args []string) error {
 		if err := os.Rename(w.Name(), *output); err != nil {
 			return fmt.Errorf("rename to %s: %w", *output, err)
 		}
-		fmt.Fprintf(os.Stderr, "wrote %s (%d entries, %d goals, %d strategies)\n",
-			*output, len(entries), len(goals), len(strategies))
+		// Silent success: the file's mtime + content is the receipt. Errors
+		// still surface on stderr via the return at the call site. This keeps
+		// the launchd `*.err` log empty unless something actually failed.
 	}
 	return nil
 }
