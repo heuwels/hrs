@@ -728,7 +728,7 @@ func cmdGoals(args []string) error {
 	action := ""
 	if len(args) > 0 {
 		switch args[0] {
-		case "add", "done", "undo", "rm", "link", "edit":
+		case "add", "done", "undo", "rm", "link", "unlink", "edit":
 			action = args[0]
 			args = args[1:]
 		}
@@ -745,6 +745,8 @@ func cmdGoals(args []string) error {
 		return cmdGoalsRm(args)
 	case "link":
 		return cmdGoalsLink(args)
+	case "unlink":
+		return cmdGoalsUnlink(args)
 	case "edit":
 		return cmdGoalsEdit(args)
 	default:
@@ -1047,9 +1049,55 @@ func cmdGoalsLink(args []string) error {
 	return nil
 }
 
+func cmdGoalsUnlink(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: hrs goals unlink <id> -e entry_ids")
+	}
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid goal id: %s", args[0])
+	}
+
+	fs := flag.NewFlagSet("hrs goals unlink", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	entryFlag := fs.String("e", "", "entry IDs to unlink (comma-separated)")
+	fs.Parse(args[1:])
+
+	if *entryFlag == "" {
+		return fmt.Errorf("required: -e entry_ids")
+	}
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	var entryIDs []int64
+	for _, s := range strings.Split(*entryFlag, ",") {
+		eid, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid entry id: %s", s)
+		}
+		entryIDs = append(entryIDs, eid)
+	}
+
+	removed, err := UnlinkGoalEntries(db, id, entryIDs)
+	if err != nil {
+		return err
+	}
+	out, _ := json.Marshal(map[string]any{
+		"goal_id":           id,
+		"requested_entries": entryIDs,
+		"removed":           removed,
+	})
+	fmt.Println(string(out))
+	return nil
+}
+
 func cmdGoalsEdit(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: hrs goals edit <id> [-t text] [-s strategy_id] [-i] [-u]")
+		return fmt.Errorf("usage: hrs goals edit <id> [-t text] [-d date] [-s strategy_id] [-i] [-u]")
 	}
 	id, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
@@ -1059,6 +1107,7 @@ func cmdGoalsEdit(args []string) error {
 	fs := flag.NewFlagSet("hrs goals edit", flag.ExitOnError)
 	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
 	text := fs.String("t", "", "text")
+	dateFlag := fs.String("d", "", "date (YYYY-MM-DD) — move goal to a different day")
 	strategyFlag := fs.Int64("s", -1, "link to strategy ID (0 to unlink)")
 	importantFlag := fs.String("i", "", "important (true|false)")
 	urgentFlag := fs.String("u", "", "urgent (true|false)")
@@ -1101,6 +1150,12 @@ func cmdGoalsEdit(args []string) error {
 
 	if err := UpdateGoal(db, id, g.Text, g.StrategyID, g.Important, g.Urgent, g.TicketRef); err != nil {
 		return err
+	}
+	if *dateFlag != "" {
+		if err := UpdateGoalDate(db, id, *dateFlag); err != nil {
+			return err
+		}
+		g.Date = *dateFlag
 	}
 	out, _ := json.Marshal(g)
 	fmt.Println(string(out))

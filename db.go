@@ -438,6 +438,23 @@ func LinkGoalEntries(db *sql.DB, goalID int64, entryIDs []int64) error {
 	return nil
 }
 
+// UnlinkGoalEntries removes entry-to-goal links. Idempotent — removing an
+// already-absent link is a no-op rather than an error. Returns the count of
+// rows actually removed so callers can distinguish "all five removed" from
+// "three removed, two were never linked".
+func UnlinkGoalEntries(db *sql.DB, goalID int64, entryIDs []int64) (int64, error) {
+	var total int64
+	for _, eid := range entryIDs {
+		res, err := db.Exec(`DELETE FROM goal_entries WHERE goal_id=? AND entry_id=?`, goalID, eid)
+		if err != nil {
+			return total, err
+		}
+		n, _ := res.RowsAffected()
+		total += n
+	}
+	return total, nil
+}
+
 // --- Strategies ---
 
 func InsertStrategy(db *sql.DB, title, description string, important, urgent bool, ticketRef *string) (int64, error) {
@@ -584,6 +601,16 @@ func GetStrategyGoals(db *sql.DB, strategyID int64) ([]Goal, error) {
 func UpdateGoal(db *sql.DB, id int64, text string, strategyID *int64, important, urgent bool, ticketRef *string) error {
 	_, err := db.Exec(`UPDATE goals SET text=?, strategy_id=?, important=?, urgent=?, ticket_ref=? WHERE id=?`,
 		text, strategyID, important, urgent, ticketRef, id)
+	return err
+}
+
+// UpdateGoalDate moves a goal to a different day. Used by the
+// "carry yesterday's incomplete goal to today" workflow.
+func UpdateGoalDate(db *sql.DB, id int64, date string) error {
+	if !dateRe.MatchString(date) {
+		return fmt.Errorf("invalid date format: %q (expected YYYY-MM-DD)", date)
+	}
+	_, err := db.Exec(`UPDATE goals SET date=? WHERE id=?`, date, id)
 	return err
 }
 
