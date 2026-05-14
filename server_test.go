@@ -261,6 +261,120 @@ func TestRenderMarkdown(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, md)
 		}
 	}
+	if strings.Contains(md, "R&D") {
+		t.Errorf("no entries tagged R&D, but R&D summary appeared:\n%s", md)
+	}
+}
+
+func TestRenderMarkdownRD(t *testing.T) {
+	md := RenderMarkdown([]Entry{
+		{Date: "2026-04-13", Time: "10:00", Category: "dev", Title: "Novel algorithm", Bullets: []string{"experimented"}, HoursEst: 3, RD: true},
+		{Date: "2026-04-13", Time: "14:00", Category: "admin", Title: "Routine", Bullets: []string{"chored"}, HoursEst: 1},
+	})
+	for _, want := range []string{
+		"## 10:00 - [dev] Novel algorithm (~3h) [R&D]",
+		"## 14:00 - [admin] Routine (~1h)\n",
+		"- R&D hours: 3h (75%)",
+	} {
+		if !strings.Contains(md, want) {
+			t.Errorf("missing %q in:\n%s", want, md)
+		}
+	}
+}
+
+func TestRDPersistsThroughCreateAndList(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	body := `{"date":"2026-04-13","time":"10:00","category":"dev","title":"R&D work","bullets":["x"],"hours_est":1,"rd":true}`
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/entries", strings.NewReader(body)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/entries?date=2026-04-13", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("list: %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `"rd":true`) {
+		t.Fatalf("rd flag lost in round trip: %s", w.Body.String())
+	}
+}
+
+func TestFilterRD(t *testing.T) {
+	entries := []Entry{
+		{ID: 1, RD: true},
+		{ID: 2, RD: false},
+		{ID: 3, RD: true},
+	}
+	got := filterRD(entries)
+	if len(got) != 2 || got[0].ID != 1 || got[1].ID != 3 {
+		t.Errorf("filterRD: expected entries 1 and 3, got %+v", got)
+	}
+}
+
+func TestUnlinkGoalEntries(t *testing.T) {
+	s := testServer(t)
+	gid, err := InsertGoal(s.db, "2026-05-14", "test goal", nil, false, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := &Entry{Date: "2026-05-14", Time: "10:00", Category: "dev", Title: "t", Bullets: []string{"x"}, HoursEst: 1}
+	eid1, err := InsertEntry(s.db, e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e2 := &Entry{Date: "2026-05-14", Time: "11:00", Category: "dev", Title: "u", Bullets: []string{"y"}, HoursEst: 1}
+	eid2, err := InsertEntry(s.db, e2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := LinkGoalEntries(s.db, gid, []int64{eid1, eid2}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unlinking one entry removes only it; unlinking a non-linked entry is a no-op.
+	removed, err := UnlinkGoalEntries(s.db, gid, []int64{eid1, 9999})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 1 {
+		t.Errorf("expected 1 row removed, got %d", removed)
+	}
+
+	got, err := getGoalEntryIDs(s.db, gid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != eid2 {
+		t.Errorf("expected only entry %d still linked, got %v", eid2, got)
+	}
+}
+
+func TestUpdateGoalDate(t *testing.T) {
+	s := testServer(t)
+	gid, err := InsertGoal(s.db, "2026-05-08", "yesterday goal", nil, false, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := UpdateGoalDate(s.db, gid, "2026-05-14"); err != nil {
+		t.Fatal(err)
+	}
+	g, err := GetGoalByID(s.db, gid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.Date != "2026-05-14" {
+		t.Errorf("expected date 2026-05-14, got %s", g.Date)
+	}
+
+	// Bad format rejected.
+	if err := UpdateGoalDate(s.db, gid, "14/05/2026"); err == nil {
+		t.Errorf("expected invalid date to be rejected")
+	}
 }
 
 func TestSyncWritesFile(t *testing.T) {

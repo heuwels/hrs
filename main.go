@@ -19,6 +19,7 @@ usage:
   hrs edit <id>         edit an entry
   hrs rm <id>           delete an entry
   hrs export [flags]    export entries (json|csv)
+  hrs backup [flags]    write full-state JSON snapshot (entries + goals + strategies)
   hrs categories        list all categories
   hrs migrate [flags]   import existing markdown files
   hrs docs [flags]      serve the documentation site
@@ -51,6 +52,8 @@ func main() {
 		err = cmdRm(os.Args[2:])
 	case "export":
 		err = cmdExport(os.Args[2:])
+	case "backup":
+		err = cmdBackup(os.Args[2:])
 	case "categories":
 		err = cmdCategories(os.Args[2:])
 	case "migrate":

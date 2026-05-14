@@ -26,6 +26,7 @@ var schema = map[string]any{
 				{"name": "hours_est", "type": "number", "required": false, "description": "Estimated person-hours this would take without AI assistance", "default": 0},
 				{"name": "date", "type": "string", "required": false, "description": "YYYY-MM-DD, defaults to today"},
 				{"name": "time", "type": "string", "required": false, "description": "HH:MM, defaults to now"},
+				{"name": "rd", "type": "boolean", "required": false, "description": "Tag as R&D for tax/grant reporting", "default": false},
 			},
 		},
 		{

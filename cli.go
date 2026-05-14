@@ -103,6 +103,7 @@ func cmdLog(args []string) error {
 	hours := fs.Float64("e", 0, "estimated person-hours")
 	date := fs.String("d", "", "date (YYYY-MM-DD, default: today)")
 	timeFlag := fs.String("T", "", "time (HH:MM, default: now)")
+	rd := fs.Bool("rd", false, "tag as R&D (for tax/grant reporting)")
 	fs.Parse(args)
 
 	if *category == "" || *title == "" || *bullets == "" {
@@ -121,6 +122,7 @@ func cmdLog(args []string) error {
 		Title:    *title,
 		Bullets:  parts,
 		HoursEst: *hours,
+		RD:       *rd,
 	}
 
 	// Try the server first — avoids SQLite lock contention with concurrent agents
@@ -161,6 +163,7 @@ func cmdLs(args []string) error {
 	to := fs.String("to", "", "end date (YYYY-MM-DD)")
 	category := fs.String("category", "", "filter by category")
 	ticket := fs.String("ticket", "", "filter by goal/strategy ticket prefix (e.g. PROMO)")
+	rdOnly := fs.Bool("rd", false, "only show entries tagged as R&D")
 	fs.Parse(args)
 
 	date := now().Format("2006-01-02")
@@ -188,6 +191,9 @@ func cmdLs(args []string) error {
 		entries, err := GetEntriesByTicket(db, *from, *to, ticketLike(*ticket), *category)
 		if err != nil {
 			return err
+		}
+		if *rdOnly {
+			entries = filterRD(entries)
 		}
 		if *format == "json" {
 			if entries == nil {
@@ -221,6 +227,15 @@ func cmdLs(args []string) error {
 		if err != nil {
 			return err
 		}
+		if *rdOnly {
+			filtered := enriched[:0]
+			for _, e := range enriched {
+				if e.RD {
+					filtered = append(filtered, e)
+				}
+			}
+			enriched = filtered
+		}
 		if len(enriched) == 0 {
 			fmt.Printf("No entries for %s\n", date)
 			return nil
@@ -240,6 +255,9 @@ func cmdLs(args []string) error {
 	}
 	if err != nil {
 		return err
+	}
+	if *rdOnly {
+		entries = filterRD(entries)
 	}
 
 	if *format == "json" {
@@ -275,6 +293,16 @@ func cmdLs(args []string) error {
 	return nil
 }
 
+func filterRD(entries []Entry) []Entry {
+	out := entries[:0]
+	for _, e := range entries {
+		if e.RD {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func groupByDate(entries []Entry) [][]Entry {
 	var groups [][]Entry
 	var cur []Entry
@@ -301,24 +329,36 @@ func renderColorLs(entries []Entry) {
 	titleSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 	hoursSt := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	bulletSt := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	rdSt := lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true)
 	sumSt := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
 
 	fmt.Println(hdrStyle.Render(fmt.Sprintf("# Worklog — %s", entries[0].Date)))
 	fmt.Println()
-	var total float64
+	var total, totalRD float64
 	for _, e := range entries {
 		total += e.HoursEst
+		if e.RD {
+			totalRD += e.HoursEst
+		}
 		hours := ""
 		if e.HoursEst > 0 {
 			hours = hoursSt.Render(fmt.Sprintf(" (~%gh)", e.HoursEst))
 		}
-		fmt.Printf("%s %s%s\n", catSt.Render(fmt.Sprintf("[%s]", e.Category)), titleSt.Render(e.Title), hours)
+		rdTag := ""
+		if e.RD {
+			rdTag = " " + rdSt.Render("[R&D]")
+		}
+		fmt.Printf("%s %s%s%s\n", catSt.Render(fmt.Sprintf("[%s]", e.Category)), titleSt.Render(e.Title), hours, rdTag)
 		for _, bullet := range e.Bullets {
 			fmt.Printf("  %s\n", bulletSt.Render("- "+bullet))
 		}
 		fmt.Println()
 	}
-	fmt.Println(sumSt.Render(fmt.Sprintf("%d entries  ~%gh  %.1fd", len(entries), total, total/8)))
+	summary := fmt.Sprintf("%d entries  ~%gh  %.1fd", len(entries), total, total/8)
+	if totalRD > 0 {
+		summary += fmt.Sprintf("  (R&D: %gh)", totalRD)
+	}
+	fmt.Println(sumSt.Render(summary))
 }
 
 func renderColorLsEnriched(entries []EnrichedEntry) {
@@ -327,19 +367,27 @@ func renderColorLsEnriched(entries []EnrichedEntry) {
 	titleSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 	hoursSt := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	bulletSt := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	rdSt := lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true)
 	sumSt := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
 	ctxSt := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
 
 	fmt.Println(hdrStyle.Render(fmt.Sprintf("# Worklog — %s", entries[0].Date)))
 	fmt.Println()
-	var total float64
+	var total, totalRD float64
 	for _, e := range entries {
 		total += e.HoursEst
+		if e.RD {
+			totalRD += e.HoursEst
+		}
 		hours := ""
 		if e.HoursEst > 0 {
 			hours = hoursSt.Render(fmt.Sprintf(" (~%gh)", e.HoursEst))
 		}
-		fmt.Printf("%s %s%s\n", catSt.Render(fmt.Sprintf("[%s]", e.Category)), titleSt.Render(e.Title), hours)
+		rdTag := ""
+		if e.RD {
+			rdTag = " " + rdSt.Render("[R&D]")
+		}
+		fmt.Printf("%s %s%s%s\n", catSt.Render(fmt.Sprintf("[%s]", e.Category)), titleSt.Render(e.Title), hours, rdTag)
 		for _, bullet := range e.Bullets {
 			fmt.Printf("  %s\n", bulletSt.Render("- "+bullet))
 		}
@@ -355,7 +403,11 @@ func renderColorLsEnriched(entries []EnrichedEntry) {
 		}
 		fmt.Println()
 	}
-	fmt.Println(sumSt.Render(fmt.Sprintf("%d entries  ~%gh  %.1fd", len(entries), total, total/8)))
+	summary := fmt.Sprintf("%d entries  ~%gh  %.1fd", len(entries), total, total/8)
+	if totalRD > 0 {
+		summary += fmt.Sprintf("  (R&D: %gh)", totalRD)
+	}
+	fmt.Println(sumSt.Render(summary))
 }
 
 func cmdTUI(args []string) error {
@@ -468,7 +520,15 @@ func cmdEdit(args []string) error {
 	hours := fs.Float64("e", -1, "estimated person-hours")
 	date := fs.String("d", "", "date (YYYY-MM-DD)")
 	timeFlag := fs.String("T", "", "time (HH:MM)")
+	rd := fs.Bool("rd", false, "tag as R&D (use -rd=false to clear)")
 	fs.Parse(args[1:])
+
+	rdSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "rd" {
+			rdSet = true
+		}
+	})
 
 	db, err := OpenDB(*dbPath)
 	if err != nil {
@@ -504,6 +564,9 @@ func cmdEdit(args []string) error {
 	if *timeFlag != "" {
 		e.Time = *timeFlag
 	}
+	if rdSet {
+		e.RD = *rd
+	}
 
 	if err := UpdateEntry(db, id, e); err != nil {
 		return err
@@ -521,6 +584,7 @@ func cmdExport(args []string) error {
 	to := fs.String("to", "", "end date (YYYY-MM-DD)")
 	category := fs.String("category", "", "filter by category")
 	ticket := fs.String("ticket", "", "filter by goal/strategy ticket prefix (e.g. PROMO)")
+	rdOnly := fs.Bool("rd", false, "only export entries tagged as R&D")
 	format := fs.String("format", "json", "output format (json|csv)")
 	fs.Parse(args)
 
@@ -546,19 +610,22 @@ func cmdExport(args []string) error {
 	if err != nil {
 		return err
 	}
+	if *rdOnly {
+		entries = filterRD(entries)
+	}
 	if entries == nil {
 		entries = []Entry{}
 	}
 
 	switch *format {
 	case "csv":
-		fmt.Println("id,date,time,category,title,bullets,hours_est")
+		fmt.Println("id,date,time,category,title,bullets,hours_est,rd")
 		for _, e := range entries {
 			bulletStr := strings.Join(e.Bullets, ";")
 			// Quote fields that might contain commas
-			fmt.Printf("%d,%s,%s,%s,%q,%q,%g\n",
+			fmt.Printf("%d,%s,%s,%s,%q,%q,%g,%t\n",
 				e.ID, e.Date, e.Time, e.Category,
-				e.Title, bulletStr, e.HoursEst)
+				e.Title, bulletStr, e.HoursEst, e.RD)
 		}
 	default:
 		enc := json.NewEncoder(os.Stdout)
@@ -568,11 +635,100 @@ func cmdExport(args []string) error {
 	return nil
 }
 
+// Backup is the full-state snapshot written by `hrs backup`. Restoring is not
+// (yet) automated, but the JSON is structured to make it straightforward.
+type Backup struct {
+	Version    int        `json:"version"`
+	BackupTime string     `json:"backup_time"`
+	Entries    []Entry    `json:"entries"`
+	Goals      []Goal     `json:"goals"`
+	Strategies []Strategy `json:"strategies"`
+}
+
+func cmdBackup(args []string) error {
+	fs := flag.NewFlagSet("hrs backup", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	output := fs.String("o", "", "output path (default: stdout)")
+	fs.Parse(args)
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	entries, err := GetEntriesRange(db, "2000-01-01", "2099-12-31", "")
+	if err != nil {
+		return fmt.Errorf("read entries: %w", err)
+	}
+	if entries == nil {
+		entries = []Entry{}
+	}
+	goals, err := GetAllGoals(db)
+	if err != nil {
+		return fmt.Errorf("read goals: %w", err)
+	}
+	if goals == nil {
+		goals = []Goal{}
+	}
+	strategies, err := GetStrategies(db, "")
+	if err != nil {
+		return fmt.Errorf("read strategies: %w", err)
+	}
+	if strategies == nil {
+		strategies = []Strategy{}
+	}
+
+	backup := Backup{
+		Version:    1,
+		BackupTime: now().Format(time.RFC3339),
+		Entries:    entries,
+		Goals:      goals,
+		Strategies: strategies,
+	}
+
+	w := os.Stdout
+	if *output != "" {
+		if err := os.MkdirAll(filepath.Dir(*output), 0755); err != nil {
+			return fmt.Errorf("mkdir: %w", err)
+		}
+		// Write to a temp sibling and rename atomically so a reader (or git
+		// pre-commit hook running concurrently) never sees a partial file.
+		tmp, err := os.CreateTemp(filepath.Dir(*output), ".hrs-backup-*.json")
+		if err != nil {
+			return fmt.Errorf("temp: %w", err)
+		}
+		w = tmp
+		defer func() {
+			tmp.Close()
+			os.Remove(tmp.Name())
+		}()
+	}
+
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(backup); err != nil {
+		return err
+	}
+
+	if *output != "" {
+		if err := w.Close(); err != nil {
+			return err
+		}
+		if err := os.Rename(w.Name(), *output); err != nil {
+			return fmt.Errorf("rename to %s: %w", *output, err)
+		}
+		fmt.Fprintf(os.Stderr, "wrote %s (%d entries, %d goals, %d strategies)\n",
+			*output, len(entries), len(goals), len(strategies))
+	}
+	return nil
+}
+
 func cmdGoals(args []string) error {
 	action := ""
 	if len(args) > 0 {
 		switch args[0] {
-		case "add", "done", "undo", "rm", "link", "edit":
+		case "add", "done", "undo", "rm", "link", "unlink", "edit":
 			action = args[0]
 			args = args[1:]
 		}
@@ -589,6 +745,8 @@ func cmdGoals(args []string) error {
 		return cmdGoalsRm(args)
 	case "link":
 		return cmdGoalsLink(args)
+	case "unlink":
+		return cmdGoalsUnlink(args)
 	case "edit":
 		return cmdGoalsEdit(args)
 	default:
@@ -891,9 +1049,55 @@ func cmdGoalsLink(args []string) error {
 	return nil
 }
 
+func cmdGoalsUnlink(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: hrs goals unlink <id> -e entry_ids")
+	}
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid goal id: %s", args[0])
+	}
+
+	fs := flag.NewFlagSet("hrs goals unlink", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	entryFlag := fs.String("e", "", "entry IDs to unlink (comma-separated)")
+	fs.Parse(args[1:])
+
+	if *entryFlag == "" {
+		return fmt.Errorf("required: -e entry_ids")
+	}
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	var entryIDs []int64
+	for _, s := range strings.Split(*entryFlag, ",") {
+		eid, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid entry id: %s", s)
+		}
+		entryIDs = append(entryIDs, eid)
+	}
+
+	removed, err := UnlinkGoalEntries(db, id, entryIDs)
+	if err != nil {
+		return err
+	}
+	out, _ := json.Marshal(map[string]any{
+		"goal_id":           id,
+		"requested_entries": entryIDs,
+		"removed":           removed,
+	})
+	fmt.Println(string(out))
+	return nil
+}
+
 func cmdGoalsEdit(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: hrs goals edit <id> [-t text] [-s strategy_id] [-i] [-u]")
+		return fmt.Errorf("usage: hrs goals edit <id> [-t text] [-d date] [-s strategy_id] [-i] [-u]")
 	}
 	id, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
@@ -903,6 +1107,7 @@ func cmdGoalsEdit(args []string) error {
 	fs := flag.NewFlagSet("hrs goals edit", flag.ExitOnError)
 	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
 	text := fs.String("t", "", "text")
+	dateFlag := fs.String("d", "", "date (YYYY-MM-DD) — move goal to a different day")
 	strategyFlag := fs.Int64("s", -1, "link to strategy ID (0 to unlink)")
 	importantFlag := fs.String("i", "", "important (true|false)")
 	urgentFlag := fs.String("u", "", "urgent (true|false)")
@@ -945,6 +1150,12 @@ func cmdGoalsEdit(args []string) error {
 
 	if err := UpdateGoal(db, id, g.Text, g.StrategyID, g.Important, g.Urgent, g.TicketRef); err != nil {
 		return err
+	}
+	if *dateFlag != "" {
+		if err := UpdateGoalDate(db, id, *dateFlag); err != nil {
+			return err
+		}
+		g.Date = *dateFlag
 	}
 	out, _ := json.Marshal(g)
 	fmt.Println(string(out))
