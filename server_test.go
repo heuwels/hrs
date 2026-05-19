@@ -377,6 +377,83 @@ func TestUpdateGoalDate(t *testing.T) {
 	}
 }
 
+// TestCarryGoal exercises the carry behaviour: preserves linked entries,
+// idempotent on same-date, refuses completed goals, surfaces not-found,
+// rejects bad date formats.
+func TestCarryGoal(t *testing.T) {
+	s := testServer(t)
+
+	gid, err := InsertGoal(s.db, "2026-05-19", "yesterday's leftover", nil, false, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Link an entry to verify it survives the carry.
+	eid, err := InsertEntry(s.db, &Entry{Date: "2026-05-19", Time: "16:00", Category: "dev", Title: "logged", Bullets: []string{"x"}, HoursEst: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := LinkGoalEntries(s.db, gid, []int64{eid}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Happy path: yesterday → today, original date returned, not a noop.
+	g, from, noop, err := CarryGoal(s.db, gid, "2026-05-20")
+	if err != nil {
+		t.Fatalf("carry failed: %v", err)
+	}
+	if from != "2026-05-19" {
+		t.Errorf("expected from=2026-05-19, got %s", from)
+	}
+	if g.Date != "2026-05-20" {
+		t.Errorf("expected carry to 2026-05-20, got %s", g.Date)
+	}
+	if noop {
+		t.Errorf("expected real carry, got noop=true")
+	}
+	if len(g.EntryIDs) != 1 || g.EntryIDs[0] != eid {
+		t.Errorf("expected linked entry %d to survive carry, got %v", eid, g.EntryIDs)
+	}
+
+	// Idempotent: same-date carry returns noop=true and doesn't error.
+	g2, from2, noop2, err := CarryGoal(s.db, gid, "2026-05-20")
+	if err != nil {
+		t.Fatalf("same-date carry should not error: %v", err)
+	}
+	if !noop2 {
+		t.Errorf("expected noop=true for same-date carry")
+	}
+	if from2 != "2026-05-20" || g2.Date != "2026-05-20" {
+		t.Errorf("expected from=to=2026-05-20 on noop, got from=%s to=%s", from2, g2.Date)
+	}
+
+	// Completed goals are refused with a helpful message.
+	if err := CompleteGoal(s.db, gid, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err = CarryGoal(s.db, gid, "2026-05-21")
+	if err == nil {
+		t.Errorf("expected carry of completed goal to error")
+	} else if !strings.Contains(err.Error(), "undo") {
+		t.Errorf("expected error to mention 'undo', got: %v", err)
+	}
+
+	// Unknown ID surfaces a not-found error.
+	_, _, _, err = CarryGoal(s.db, 99999, "2026-05-21")
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected not-found error for missing goal, got: %v", err)
+	}
+
+	// Bad date format is rejected by the underlying UpdateGoalDate call.
+	if err := UncompleteGoal(s.db, gid); err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err = CarryGoal(s.db, gid, "not-a-date")
+	if err == nil {
+		t.Errorf("expected bad date format to error")
+	}
+}
+
 func TestSyncWritesFile(t *testing.T) {
 	s := testServer(t)
 	mux := testMux(s)

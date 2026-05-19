@@ -729,7 +729,7 @@ func cmdGoals(args []string) error {
 	action := ""
 	if len(args) > 0 {
 		switch args[0] {
-		case "add", "done", "undo", "rm", "link", "unlink", "edit":
+		case "add", "done", "undo", "rm", "link", "unlink", "edit", "carry":
 			action = args[0]
 			args = args[1:]
 		}
@@ -750,6 +750,8 @@ func cmdGoals(args []string) error {
 		return cmdGoalsUnlink(args)
 	case "edit":
 		return cmdGoalsEdit(args)
+	case "carry":
+		return cmdGoalsCarry(args)
 	default:
 		return cmdGoalsList(args)
 	}
@@ -765,6 +767,7 @@ usage:
   hrs goals undo <id>                       reopen a completed goal
   hrs goals rm <id>                         delete a goal
   hrs goals link <id> -e entry_ids          link entries to a goal
+  hrs goals carry <id> [-d date]            move an open goal to a new day (default: today)
 `
 
 func cmdGoalsList(args []string) error {
@@ -1159,6 +1162,51 @@ func cmdGoalsEdit(args []string) error {
 		g.Date = *dateFlag
 	}
 	out, _ := json.Marshal(g)
+	fmt.Println(string(out))
+	return nil
+}
+
+// cmdGoalsCarry moves an open goal to a new day. Default target is today,
+// so the common "carry yesterday's leftover forward" call is just
+// `hrs goals carry <id>`. Completed goals are refused — undo first if you
+// need to revive one. The goal's ID, strategy link, ticket reference,
+// priority flags, and linked entries are all preserved by the underlying
+// CarryGoal call.
+func cmdGoalsCarry(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: hrs goals carry <id> [-d date]")
+	}
+	id, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid goal id: %s", args[0])
+	}
+
+	fs := flag.NewFlagSet("hrs goals carry", flag.ExitOnError)
+	dbPath := fs.String("db", DefaultDB(), "sqlite database path")
+	dateFlag := fs.String("d", "", "target date (YYYY-MM-DD, default: today)")
+	fs.Parse(args[1:])
+
+	target := *dateFlag
+	if target == "" {
+		target = now().Format("2006-01-02")
+	}
+
+	db, err := OpenDB(*dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	g, from, noop, err := CarryGoal(db, id, target)
+	if err != nil {
+		return err
+	}
+
+	result := map[string]any{"id": id, "from": from, "to": g.Date, "text": g.Text}
+	if noop {
+		result["noop"] = true
+	}
+	out, _ := json.Marshal(result)
 	fmt.Println(string(out))
 	return nil
 }

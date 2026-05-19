@@ -614,6 +614,31 @@ func UpdateGoalDate(db *sql.DB, id int64, date string) error {
 	return err
 }
 
+// CarryGoal moves an open goal to the target date, preserving its ID,
+// strategy link, ticket reference, priority flags, and linked entries.
+// Refuses completed goals (caller should run undo first). A same-date
+// carry is a no-op and returns the goal unchanged with noop=true.
+// Returns the goal (with updated date), the original date, and whether
+// the call was a no-op.
+func CarryGoal(db *sql.DB, id int64, target string) (g *Goal, originalDate string, noop bool, err error) {
+	g, err = GetGoalByID(db, id)
+	if err != nil {
+		return nil, "", false, fmt.Errorf("goal %d not found", id)
+	}
+	if g.Completed {
+		return nil, "", false, fmt.Errorf("goal #%d is completed; run 'hrs goals undo %d' first if you want to carry it", id, id)
+	}
+	originalDate = g.Date
+	if g.Date == target {
+		return g, originalDate, true, nil
+	}
+	if err = UpdateGoalDate(db, id, target); err != nil {
+		return nil, "", false, err
+	}
+	g.Date = target
+	return g, originalDate, false, nil
+}
+
 // GetAllGoals returns every goal in the database, completed and active, with
 // EntryIDs populated. Used by `hrs backup` to produce a full-state snapshot.
 func GetAllGoals(db *sql.DB) ([]Goal, error) {

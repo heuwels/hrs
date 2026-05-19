@@ -58,6 +58,22 @@ linking entries connects the work you logged to the goal it achieved.
 hrs goals link 1 -e 41,42   # link entries without completing
 ```
 
+### carry an open goal to a new day
+
+```bash
+hrs goals carry 38           # move goal #38 to today
+hrs goals carry 38 -d 2026-05-22   # move to a specific date
+```
+
+`carry` preserves the goal's ID, strategy link, ticket reference, priority
+flags, and any entries already linked. Useful for end-of-day "roll yesterday's
+incomplete forward" without losing continuity (which `add` of a fresh goal
+would break).
+
+Completed goals are refused — run `hrs goals undo <id>` first if you want
+to revive one. Carrying a goal to its existing date is a no-op (returns
+`noop: true`), so the command is safe to script.
+
 ### reopen or delete
 
 ```bash
