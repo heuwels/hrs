@@ -432,6 +432,18 @@ func (m tuiModel) updateStrats(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.msg = fmt.Sprintf("strategy %d: marked urgent", s.ID)
 			}
 		}
+	case "x":
+		if len(m.strategies) > 0 && m.sCursor < len(m.strategies) {
+			s := m.strategies[m.sCursor]
+			if s.Status == "completed" {
+				UpdateStrategyStatus(m.db, s.ID, "active")
+				m.msg = fmt.Sprintf("reopened strategy %d", s.ID)
+			} else {
+				UpdateStrategyStatus(m.db, s.ID, "completed")
+				m.msg = fmt.Sprintf("completed strategy %d", s.ID)
+			}
+			m.loadStrategies()
+		}
 	case "d":
 		if len(m.strategies) > 0 && m.sCursor < len(m.strategies) {
 			s := m.strategies[m.sCursor]
@@ -648,6 +660,20 @@ func (m tuiModel) updateStratsMatrix(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.smCursor < len(q) {
 			s := q[m.smCursor]
 			UpdateStrategy(m.db, s.ID, s.Title, s.Description, s.Important, !s.Urgent, s.TicketRef)
+			m.loadActiveStrats()
+			m.smCursor = 0
+		}
+	case "x":
+		q := quads[m.smQuadrant]
+		if m.smCursor < len(q) {
+			s := q[m.smCursor]
+			if s.Status == "completed" {
+				UpdateStrategyStatus(m.db, s.ID, "active")
+				m.msg = fmt.Sprintf("reopened strategy %d", s.ID)
+			} else {
+				UpdateStrategyStatus(m.db, s.ID, "completed")
+				m.msg = fmt.Sprintf("completed strategy %d", s.ID)
+			}
 			m.loadActiveStrats()
 			m.smCursor = 0
 		}
@@ -891,9 +917,9 @@ func (m tuiModel) View() string {
 		case viewGoalsMatrix:
 			b.WriteString(helpStyle.Render("  j/k scroll  arrows quadrant  x done  i/u priority  d delete  h/l day  m list  tab strats  r refresh  q quit"))
 		case viewStratList:
-			b.WriteString(helpStyle.Render("  j/k scroll  i/u priority  d delete  h/l day  m matrix  tab entries  r refresh  q quit"))
+			b.WriteString(helpStyle.Render("  j/k scroll  x done  i/u priority  d delete  h/l day  m matrix  tab entries  r refresh  q quit"))
 		case viewStratMatrix:
-			b.WriteString(helpStyle.Render("  j/k scroll  arrows quadrant  i/u priority  d delete  h/l day  m list  tab entries  r refresh  q quit"))
+			b.WriteString(helpStyle.Render("  j/k scroll  arrows quadrant  x done  i/u priority  d delete  h/l day  m list  tab entries  r refresh  q quit"))
 		default:
 			b.WriteString(helpStyle.Render("  j/k scroll  h/l day  d delete  e edit  tab goals  g/G top/btm  t today  r refresh  q quit"))
 		}
@@ -1069,10 +1095,17 @@ func (m tuiModel) renderStratList(b *strings.Builder) {
 		if s.TicketRef != nil {
 			ticketTag = hoursStyle.Render(fmt.Sprintf(" [%s]", *s.TicketRef))
 		}
-		fmt.Fprintf(b, "%s%s %s%s%s%s\n", prefix,
+		check := openStyle.Render("[ ] ")
+		title := titleStyle.Render(s.Title)
+		if s.Status == "completed" {
+			check = checkStyle.Render("[x] ")
+			title = hoursStyle.Render(s.Title)
+		}
+		fmt.Fprintf(b, "%s%s%s %s%s%s%s\n", prefix,
+			check,
 			hoursStyle.Render(fmt.Sprintf("#%d", s.ID)),
 			prio,
-			titleStyle.Render(s.Title),
+			title,
 			ticketTag,
 			desc,
 		)
@@ -1236,8 +1269,13 @@ func (m tuiModel) renderMatrixStratItem(strats []Strategy, idx, quadrant, colW i
 		prefix = selStyle.Render("> ")
 	}
 
+	check := openStyle.Render("[ ]")
+	if s.Status == "completed" {
+		check = checkStyle.Render("[x]")
+	}
+
 	text := s.Title
-	maxText := colW - 6
+	maxText := colW - 10
 	if maxText < 10 {
 		maxText = 10
 	}
@@ -1245,8 +1283,9 @@ func (m tuiModel) renderMatrixStratItem(strats []Strategy, idx, quadrant, colW i
 		text = text[:maxText-3] + "..."
 	}
 
-	line := fmt.Sprintf("%s%s %s", prefix, hoursStyle.Render(fmt.Sprintf("#%d", s.ID)), text)
-	visible := 4 + len(fmt.Sprintf("#%d", s.ID)) + 1 + len(text)
+	idStr := fmt.Sprintf("#%d", s.ID)
+	line := fmt.Sprintf("%s%s %s %s", prefix, check, hoursStyle.Render(idStr), text)
+	visible := 4 + 3 + 1 + len(idStr) + 1 + len(text)
 	if visible < colW {
 		line += strings.Repeat(" ", colW-visible)
 	}
