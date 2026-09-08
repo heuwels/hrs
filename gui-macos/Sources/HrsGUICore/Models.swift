@@ -33,6 +33,9 @@ public struct Strategy: Codable, Identifiable, Hashable, Sendable {
         self.ticketRef = ticketRef
     }
 
+    public var isActive: Bool { status == "active" }
+    public var isClosed: Bool { status == "completed" || status == "archived" }
+
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(Int64.self, forKey: .id)

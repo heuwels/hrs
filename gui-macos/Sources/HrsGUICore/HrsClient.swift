@@ -37,6 +37,10 @@ public struct HrsClient: Sendable {
         return try await put("goals/\(goalID)", body: body)
     }
 
+    public func setStrategyStatus(_ id: Int64, status: String) async throws {
+        _ = try await putRaw("strategies/\(id)", body: Self.encodeStatusPatch(status: status))
+    }
+
     public func completeGoal(_ id: Int64) async throws {
         _ = try await putRaw("goals/\(id)/done", body: Data("{}".utf8))
     }
@@ -51,6 +55,10 @@ public struct HrsClient: Sendable {
             return try! JSONEncoder().encode(payload)
         }
         return Data(#"{"strategy_id":null}"#.utf8)
+    }
+
+    public static func encodeStatusPatch(status: String) -> Data {
+        try! JSONEncoder().encode(["status": status])
     }
 
     public static func endpoint(base: URL, path: String) throws -> URL {

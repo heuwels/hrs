@@ -42,7 +42,9 @@ and the default open-goals graph already work against hrs 1.7.0.
 
 Completed strategies stay hidden unless you turn them on, but a completed
 strategy that still has open goals remains visible so those goals do not look
-orphaned.
+orphaned. Close or archive a strategy from the inspector (or the card's
+context menu). Linked tactical goals stay put; Reopen brings the strategy
+back.
 
 ## API surface
 

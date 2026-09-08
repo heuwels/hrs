@@ -123,6 +123,13 @@ struct HrsClientTests {
         #expect(String(data: unlinked, encoding: .utf8) == #"{"strategy_id":null}"#)
     }
 
+    @Test func statusPatchEncodesCompleted() throws {
+        struct Patch: Decodable { var status: String }
+        let data = HrsClient.encodeStatusPatch(status: "completed")
+        let patch = try JSONDecoder().decode(Patch.self, from: data)
+        #expect(patch.status == "completed")
+    }
+
     @Test func goalDecoderTreatsMissingStrategyAsUnaligned() throws {
         let json = Data(#"{"id":3,"date":"2026-09-08","text":"Casio setup","completed":false}"#.utf8)
         let goal = try JSONDecoder().decode(Goal.self, from: json)

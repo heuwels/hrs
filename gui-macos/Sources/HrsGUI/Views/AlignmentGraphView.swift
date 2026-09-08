@@ -29,6 +29,9 @@ struct AlignmentGraphView: View {
                     .offset(x: lane.strategyRect.minX, y: lane.strategyRect.minY)
                     .opacity(store.isDimmed(strategyID: lane.strategy.id) ? 0.35 : 1)
                     .onTapGesture { store.select(.strategy(lane.strategy.id)) }
+                    .contextMenu {
+                        strategyContextMenu(lane.strategy)
+                    }
                     ForEach(lane.goals) { frame in
                         goalCard(frame, layout: layout)
                     }
@@ -99,6 +102,22 @@ struct AlignmentGraphView: View {
                         Task { await store.link(frame.goal.id, to: strategy.id) }
                     }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func strategyContextMenu(_ strategy: Strategy) -> some View {
+        if strategy.isActive {
+            Button("Close") {
+                Task { await store.setStrategyStatus(strategy.id, status: "completed") }
+            }
+            Button("Archive") {
+                Task { await store.setStrategyStatus(strategy.id, status: "archived") }
+            }
+        } else {
+            Button("Reopen") {
+                Task { await store.setStrategyStatus(strategy.id, status: "active") }
             }
         }
     }

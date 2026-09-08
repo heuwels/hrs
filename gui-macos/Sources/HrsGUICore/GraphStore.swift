@@ -173,6 +173,25 @@ public final class GraphStore {
         }
     }
 
+    public func setStrategyStatus(_ id: Int64, status: String) async {
+        guard let index = strategies.firstIndex(where: { $0.id == id }) else { return }
+        let previous = strategies[index].status
+        if previous == status { return }
+        strategies[index].status = status
+        do {
+            try await client.setStrategyStatus(id, status: status)
+            await refresh()
+            if case .strategy(let selectedID) = selected,
+               selectedID == id,
+               !visibleStrategies.contains(where: { $0.id == id }) {
+                selected = nil
+            }
+        } catch {
+            strategies[index].status = previous
+            errorMessage = error.localizedDescription
+        }
+    }
+
     public func select(_ node: NodeID?) {
         selected = node
     }

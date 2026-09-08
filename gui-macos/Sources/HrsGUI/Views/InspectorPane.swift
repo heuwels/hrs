@@ -65,6 +65,9 @@ struct InspectorPane: View {
             labeled("Goals", "\(report.goalsDone) done / \(report.goalsTotal) total")
             labeled("Hours", String(format: "%.1f", report.totalHours))
         }
+
+        strategyActions(strategy)
+
         let children = store.visibleGoals.filter { $0.strategyId == strategy.id }
         if children.isEmpty {
             Text("No tactical goals yet. Drag one onto this lane.")
@@ -143,6 +146,42 @@ struct InspectorPane: View {
                 }
         }
         .padding(16)
+    }
+
+    @ViewBuilder
+    private func strategyActions(_ strategy: Strategy) -> some View {
+        let openLinked = store.goals.filter { $0.strategyId == strategy.id && !$0.completed }.count
+        HStack {
+            if strategy.isActive {
+                Button("Close") {
+                    Task { await store.setStrategyStatus(strategy.id, status: "completed") }
+                }
+                .accessibilityIdentifier("close-strategy")
+                Button("Archive") {
+                    Task { await store.setStrategyStatus(strategy.id, status: "archived") }
+                }
+                .accessibilityIdentifier("archive-strategy")
+            } else {
+                Button("Reopen") {
+                    Task { await store.setStrategyStatus(strategy.id, status: "active") }
+                }
+                if strategy.status != "archived" {
+                    Button("Archive") {
+                        Task { await store.setStrategyStatus(strategy.id, status: "archived") }
+                    }
+                }
+                if strategy.status != "completed" {
+                    Button("Close") {
+                        Task { await store.setStrategyStatus(strategy.id, status: "completed") }
+                    }
+                }
+            }
+        }
+        if strategy.isActive && openLinked > 0 {
+            Text("\(openLinked) open tactical goals stay linked.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private func titleBlock(_ title: String, subtitle: String) -> some View {
