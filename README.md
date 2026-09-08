@@ -92,6 +92,17 @@ hrs serve &                          # start on localhost:9746
 
 The CLI auto-detects the server — if it's running, `hrs log` routes through it. If not, it writes directly to SQLite. No config needed either way.
 
+## macOS GUI
+
+A SwiftUI companion that draws the `strategy_id` link between strategic goals and tactical goals. Unaligned daily goals sit in their own column. Drag a goal onto a strategy to link it; drop it on Unaligned to clear the link.
+
+```bash
+hrs serve    # if it is not already running on :9746
+make gui
+```
+
+See [`gui-macos/README.md`](gui-macos/README.md). Requires macOS 14+. The app talks only to `hrs serve`; it does not open the SQLite file.
+
 ### API
 
 ### `POST /entries`

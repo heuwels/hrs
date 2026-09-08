@@ -132,10 +132,27 @@ list goals for a date.
 
 ```bash
 GET /goals?date=2026-04-14
+GET /goals?all=1
 ```
+
+`date` defaults to today. `all=1` (or `all=true`) returns every goal across all
+dates, completed and open.
 
 returns `200` with a json array. each goal includes `entry_ids` if any entries
 are linked.
+
+## PUT /goals/{id}
+
+partial update. any of `text`, `strategy_id`, `important`, `urgent`,
+`ticket_ref`. omitted fields are left unchanged.
+
+```json
+{"strategy_id": 1}
+{"strategy_id": null}
+```
+
+`strategy_id: null` unlinks the goal from its strategy. `ticket_ref: null` or
+`""` clears the ticket.
 
 ## PUT /goals/{id}/done
 

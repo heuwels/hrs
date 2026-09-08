@@ -1000,6 +1000,97 @@ func TestStrategyTicketInheritance(t *testing.T) {
 	}
 }
 
+func TestGoalStrategyUnlink(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/strategies",
+		strings.NewReader(`{"title":"Ship v2"}`)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("strategy: %d %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("POST", "/goals",
+		strings.NewReader(`{"date":"2026-04-16","text":"Implement oauth","strategy_id":1}`)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("goal: %d %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/goals?date=2026-04-16", nil))
+	if !strings.Contains(w.Body.String(), `"strategy_id":1`) {
+		t.Fatalf("expected linked goal: %s", w.Body.String())
+	}
+
+	// Partial update without strategy_id must not unlink.
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("PUT", "/goals/1",
+		strings.NewReader(`{"text":"Implement OAuth2"}`)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("text update: %d %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"strategy_id":1`) {
+		t.Fatalf("text-only PUT unlinked strategy: %s", w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("PUT", "/goals/1",
+		strings.NewReader(`{"strategy_id":null}`)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("unlink: %d %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), `"strategy_id"`) {
+		t.Fatalf("strategy_id still present after null: %s", w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/goals?date=2026-04-16", nil))
+	if strings.Contains(w.Body.String(), `"strategy_id"`) {
+		t.Fatalf("still linked after unlink: %s", w.Body.String())
+	}
+}
+
+func TestListAllGoals(t *testing.T) {
+	s := testServer(t)
+	mux := testMux(s)
+
+	for _, body := range []string{
+		`{"date":"2026-04-14","text":"Monday"}`,
+		`{"date":"2026-04-15","text":"Tuesday"}`,
+	} {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("POST", "/goals", strings.NewReader(body)))
+		if w.Code != http.StatusCreated {
+			t.Fatalf("create: %d %s", w.Code, w.Body.String())
+		}
+	}
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("PUT", "/goals/1/done", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("done: %d %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/goals?all=1", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("all: %d %s", w.Code, w.Body.String())
+	}
+	resp := w.Body.String()
+	if !strings.Contains(resp, "Monday") || !strings.Contains(resp, "Tuesday") {
+		t.Fatalf("all=1 missing goals: %s", resp)
+	}
+
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/goals", nil))
+	today := w.Body.String()
+	if strings.Contains(today, "Monday") {
+		t.Fatalf("default GET /goals should not return other dates: %s", today)
+	}
+}
+
 func TestEmptyList(t *testing.T) {
 	s := testServer(t)
 	mux := testMux(s)

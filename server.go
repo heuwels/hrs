@@ -59,7 +59,7 @@ var schema = map[string]any{
 		{
 			"method":      "GET",
 			"path":        "/goals",
-			"description": "List goals. Query params: date (YYYY-MM-DD, defaults to today).",
+			"description": "List goals. Query params: date (YYYY-MM-DD, defaults to today); all=1 returns every goal across all dates.",
 		},
 		{
 			"method":      "GET",
@@ -69,7 +69,7 @@ var schema = map[string]any{
 		{
 			"method":      "PUT",
 			"path":        "/goals/{id}",
-			"description": "Update a goal. Body fields: text, strategy_id, important, urgent, ticket_ref (all optional, partial update; ticket_ref:null or \"\" clears).",
+			"description": "Update a goal. Body fields: text, strategy_id, important, urgent, ticket_ref (all optional, partial update; strategy_id:null unlinks; ticket_ref:null or \"\" clears).",
 		},
 		{
 			"method":      "PUT",
@@ -239,7 +239,21 @@ func (s *Server) DeleteEntry(w http.ResponseWriter, r *http.Request) {
 // --- Goal handlers ---
 
 func (s *Server) ListGoals(w http.ResponseWriter, r *http.Request) {
-	date := r.URL.Query().Get("date")
+	q := r.URL.Query()
+	all := q.Get("all")
+	if all == "1" || all == "true" {
+		goals, err := GetAllGoals(s.db)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if goals == nil {
+			goals = []Goal{}
+		}
+		writeJSON(w, http.StatusOK, goals)
+		return
+	}
+	date := q.Get("date")
 	if date == "" {
 		date = now().Format("2006-01-02")
 	}
@@ -387,7 +401,9 @@ func (s *Server) UpdateGoalHandler(w http.ResponseWriter, r *http.Request) {
 	if body.Text != nil {
 		g.Text = *body.Text
 	}
-	if body.StrategyID != nil {
+	if _, present := raw["strategy_id"]; present {
+		// "strategy_id": null → unlink from any strategy
+		// "strategy_id": 1    → link
 		g.StrategyID = body.StrategyID
 	}
 	if body.Important != nil {
